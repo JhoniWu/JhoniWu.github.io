@@ -15,7 +15,7 @@
   
   <title>
     
-      博客搬迁 
+      Leetcode-32-比较有意思的解法 
       
       
       |
@@ -161,23 +161,46 @@
   <!-- 文章内容页 url形式：https://yoursite/文章标题/ -->
   <div class="container post-details" id="post-details">
     <div class="post-content">
-      <div class="post-title">博客搬迁</div>
+      <div class="post-title">Leetcode-32-比较有意思的解法</div>
       <div class="post-attach">
         <span class="post-pubtime">
           <i class="iconfont icon-updatetime mr-10" title="更新时间"></i>
-          2024-12-30 12:23:39
+          2025-02-11 11:21:36
         </span>
         
+              <span class="post-categories">
+                <i class="iconfont icon-bookmark" title="分类"></i>
+                
+                <span class="span--category">
+                  <a href="/categories/%E4%BB%A3%E7%A0%81/" title="代码">
+                    <b>#</b> 代码
+                  </a>
+                </span>
+                
+              </span>
+          
+              <span class="post-tags">
+                <i class="iconfont icon-tags mr-10" title="标签"></i>
+                
+                <span class="span--tag mr-8">
+                  <a href="/tags/%E7%AE%97%E6%B3%95/" title="算法">
+                    #算法
+                  </a>
+                </span>
+                
+              </span>
+          
       </div>
       <div class="markdown-body">
-        <h1 id="博客搬迁"><a href="#博客搬迁" class="headerlink" title="博客搬迁"></a>博客搬迁</h1><p>技术博客迁移至掘金<a target="_blank" rel="noopener" href="https://juejin.cn/user/3122268754424151">https://juejin.cn/user/3122268754424151</a></p>
+        <h1 id="leetcode-32最长括号"><a href="#leetcode-32最长括号" class="headerlink" title="leetcode-32最长括号"></a>leetcode-32最长括号</h1><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">Solution</span> &#123;</span><br><span class="line">    <span class="keyword">public</span> <span class="type">int</span> <span class="title function_">longestValidParentheses</span><span class="params">(String s)</span> &#123;</span><br><span class="line">        <span class="type">int</span> <span class="variable">l</span> <span class="operator">=</span> <span class="number">0</span>, r = <span class="number">0</span>, max = <span class="number">0</span>;</span><br><span class="line">        <span class="type">char</span>[] ch = s.toCharArray();</span><br><span class="line">        <span class="keyword">for</span>(<span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> <span class="number">0</span>; i &lt; ch.length; i++) &#123;</span><br><span class="line">            <span class="keyword">if</span>(ch[i] == <span class="string">&#x27;(&#x27;</span>) &#123;</span><br><span class="line">                l ++;</span><br><span class="line">            &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                r ++;</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">if</span>(l == r) &#123;</span><br><span class="line">                max = Math.max(max, l + r);</span><br><span class="line">            &#125; <span class="keyword">else</span> <span class="keyword">if</span>(r &gt; l) &#123;</span><br><span class="line">                r = l = <span class="number">0</span>;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        l = r = <span class="number">0</span>;</span><br><span class="line">        <span class="keyword">for</span>(<span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> ch.length - <span class="number">1</span>; i &gt;= <span class="number">0</span>; i--) &#123;</span><br><span class="line">            <span class="keyword">if</span>(ch[i] == <span class="string">&#x27;(&#x27;</span>) &#123;</span><br><span class="line">                l ++;</span><br><span class="line">            &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                r ++;</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">if</span>(l == r) &#123;</span><br><span class="line">                max = Math.max(max, l + r);</span><br><span class="line">            &#125; <span class="keyword">else</span> <span class="keyword">if</span>(l &gt; r) &#123;</span><br><span class="line">                r = l = <span class="number">0</span>;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> max;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>前提:<br>进行括号匹配时，以从左往右为例，右括号的数量应该始终小于等于左括号的数量（若为合法的括号组），如果遇到右多了，代表需要重置。若相等，则统计。这种方式无法统计左括号数量多的情况。因此思路逆转一下，右往左再进行一次统计，取max即可。</p>
 
       </div>
       
         <div class="prev-or-next">
           <div class="post-foot-next">
             
-              <a href="/2024/11/16/spring-ioc%E6%BA%90%E7%A0%81%E5%AE%9E%E7%8E%B0%E5%88%86%E6%9E%90%EF%BC%882%EF%BC%89/" target="_self">
+              <a href="/2025/02/11/%F0%9F%9A%80rocketmq%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E4%B8%8E%E5%AE%9E%E7%8E%B0/" target="_self">
                 <i class="iconfont icon-chevronleft"></i>
                 <span>上一页</span>
               </a>
@@ -186,16 +209,33 @@
           <div class="post-attach">
             <span class="post-pubtime">
               <i class="iconfont icon-updatetime mr-10" title="更新时间"></i>
-              2024-12-30 12:23:39
+              2025-02-11 11:21:36
             </span>
             
+                  <span class="post-categories">
+                    <i class="iconfont icon-bookmark" title="分类"></i>
+                    
+                    <span class="span--category">
+                      <a href="/categories/%E4%BB%A3%E7%A0%81/" title="代码">
+                        <b>#</b> 代码
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+                  <span class="post-tags">
+                    <i class="iconfont icon-tags mr-10" title="标签"></i>
+                    
+                    <span class="span--tag mr-8">
+                      <a href="/tags/%E7%AE%97%E6%B3%95/" title="算法">
+                        #算法
+                      </a>
+                    </span>
+                    
+                  </span>
+              
           </div>
           <div class="post-foot-prev">
-            
-              <a href="/2025/02/11/%F0%9F%9A%80rocketmq%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E4%B8%8E%E5%AE%9E%E7%8E%B0/" target="_self">
-                <span>下一页</span>
-                <i class="iconfont icon-chevronright"></i>
-              </a>
             
           </div>
         </div>
@@ -209,7 +249,7 @@
     <div class="title">目录</div>
     <div class="catalog-content">
       
-        <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#%E5%8D%9A%E5%AE%A2%E6%90%AC%E8%BF%81"><span class="toc-text">博客搬迁</span></a></li></ol>
+        <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#leetcode-32%E6%9C%80%E9%95%BF%E6%8B%AC%E5%8F%B7"><span class="toc-text">leetcode-32最长括号</span></a></li></ol>
       
     </div>
   </div>
@@ -510,12 +550,12 @@
       </a>
       <div class="share-content hidden">
         
-          <a class="share-item" href="https://twitter.com/intent/tweet?text=' + %E5%8D%9A%E5%AE%A2%E6%90%AC%E8%BF%81 + '&url=' + https%3A%2F%2Fjhoniwu.github.io%2F2024%2F12%2F30%2F%25E8%25BF%2581%25E7%25A7%25BB%2F + '" target="_blank" title="Twitter">
+          <a class="share-item" href="https://twitter.com/intent/tweet?text=' + Leetcode-32-%E6%AF%94%E8%BE%83%E6%9C%89%E6%84%8F%E6%80%9D%E7%9A%84%E8%A7%A3%E6%B3%95 + '&url=' + https%3A%2F%2Fjhoniwu.github.io%2F2025%2F02%2F11%2FLeetcode-32-%25E6%25AF%2594%25E8%25BE%2583%25E6%259C%2589%25E6%2584%258F%25E6%2580%259D%25E7%259A%2584%25E8%25A7%25A3%25E6%25B3%2595%2F + '" target="_blank" title="Twitter">
             <i class="iconfont icon-twitter"></i>
           </a>
         
         
-          <a class="share-item" href="https://www.facebook.com/sharer.php?u=https://jhoniwu.github.io/2024/12/30/%E8%BF%81%E7%A7%BB/" target="_blank" title="Facebook">
+          <a class="share-item" href="https://www.facebook.com/sharer.php?u=https://jhoniwu.github.io/2025/02/11/Leetcode-32-%E6%AF%94%E8%BE%83%E6%9C%89%E6%84%8F%E6%80%9D%E7%9A%84%E8%A7%A3%E6%B3%95/" target="_blank" title="Facebook">
             <i class="iconfont icon-facebooksquare"></i>
           </a>
         

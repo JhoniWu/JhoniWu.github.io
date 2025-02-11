@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="zh-CN" color-mode="light">
+
+  <head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="author" content="pr4yer" />
+  <!-- Open Graph Description 简短摘要-->
+  
+  <!-- 用于搜索引擎的文章摘要 -->
+  
+  <meta name="description" content="车轮慢悠悠，人世本无常" />
+  
+  
+  
+  <title>
+    
+      spring ioc源码实现分析 
+      
+      
+      |
+    
+     pr4yer&#39;s Blog
+  </title>
+
+  
+    <link rel="apple-touch-icon" href="/images/favicon.png">
+    <link rel="icon" href="/images/favicon.png">
+  
+
+  <!-- Raleway-Font -->
+  <link href="https://fonts.googleapis.com/css?family=Raleway&display=swap" rel="stylesheet">
+
+  <!-- hexo site css -->
+  <link rel="stylesheet" href="/css/main.css" />
+  <link rel="stylesheet" href="//at.alicdn.com/t/font_1886449_67xjft27j1l.css" />
+  <!-- 代码块风格 -->
+  
+
+  <!-- jquery3.3.1 -->
+  
+    <script defer type="text/javascript" src="/plugins/jquery.min.js"></script>
+  
+
+  <!-- fancybox -->
+  
+    <link href="/plugins/jquery.fancybox.min.css" rel="stylesheet">
+    <script defer type="text/javascript" src="/plugins/jquery.fancybox.min.js"></script>
+  
+  
+<script src="/js/fancybox.js"></script>
+
+
+  
+
+  
+    <script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+  
+
+  <script>
+    var html = document.documentElement
+    const colorMode = localStorage.getItem('color-mode')
+    if (colorMode) {
+      document.documentElement.setAttribute('color-mode', colorMode)
+    }
+  </script>
+<meta name="generator" content="Hexo 6.3.0"></head>
+
+
+  <body>
+    <div id="app">
+      <div class="header">
+  <div class="avatar">
+    <a href="/">
+      <!-- 头像取消懒加载，添加no-lazy -->
+      
+        <img src="/images/avatar.png" alt="">
+      
+    </a>
+    <div class="nickname"><a href="/">Oranges</a></div>
+  </div>
+  <div class="navbar">
+    <ul>
+      
+        <li class="nav-item" data-path="/">
+          <a href="/">Home</a>
+        </li>
+      
+        <li class="nav-item" data-path="/archives/">
+          <a href="/archives/">Archives</a>
+        </li>
+      
+        <li class="nav-item" data-path="/categories/">
+          <a href="/categories/">Categories</a>
+        </li>
+      
+        <li class="nav-item" data-path="/tags/">
+          <a href="/tags/">Tags</a>
+        </li>
+      
+        <li class="nav-item" data-path="/friends/">
+          <a href="/friends/">Friends</a>
+        </li>
+      
+        <li class="nav-item" data-path="/about/">
+          <a href="/about/">About</a>
+        </li>
+      
+    </ul>
+  </div>
+</div>
+
+
+<script src="/js/activeNav.js"></script>
+
+
+
+      <div class="flex-container">
+        <!-- 文章详情页，展示文章具体内容，url形式：https://yoursite/文章标题/ -->
+<!-- 同时为「标签tag」，「朋友friend」，「分类categories」，「关于about」页面的承载页面，具体展示取决于page.type -->
+
+
+  <!-- LaTex Display -->
+
+  
+    <script async type="text/javascript" src="/plugins/mathjax/tex-chtml.js"></script>
+  
+  <script>
+    MathJax = {
+      tex: {
+        inlineMath: [['$', '$'], ['\\(', '\\)']]
+      }
+    }
+  </script>
+
+
+
+
+
+  <!-- clipboard -->
+
+  
+    <script async type="text/javascript" src="/plugins/clipboard.min.js"></script>
+  
+  
+<script src="/js/codeCopy.js"></script>
+
+
+
+
+
+
+
+  
+
+  
+
+  
+
+  
+  <!-- 文章内容页 url形式：https://yoursite/文章标题/ -->
+  <div class="container post-details" id="post-details">
+    <div class="post-content">
+      <div class="post-title">spring ioc源码实现分析</div>
+      <div class="post-attach">
+        <span class="post-pubtime">
+          <i class="iconfont icon-updatetime mr-10" title="更新时间"></i>
+          2025-02-11 11:14:48
+        </span>
+        
+              <span class="post-categories">
+                <i class="iconfont icon-bookmark" title="分类"></i>
+                
+                <span class="span--category">
+                  <a href="/categories/%E4%BB%A3%E7%A0%81/" title="代码">
+                    <b>#</b> 代码
+                  </a>
+                </span>
+                
+              </span>
+          
+              <span class="post-tags">
+                <i class="iconfont icon-tags mr-10" title="标签"></i>
+                
+                <span class="span--tag mr-8">
+                  <a href="/tags/spring/" title="spring">
+                    #spring
+                  </a>
+                </span>
+                
+              </span>
+          
+      </div>
+      <div class="markdown-body">
+        <h1 id="引言"><a href="#引言" class="headerlink" title="引言"></a>引言</h1><h2 id="说明"><a href="#说明" class="headerlink" title="说明"></a>说明</h2><p>文章针对spring早期的实现，主要分析xml配置形式下ioc容器相关的内容。同时也会结合我自己的项目minispring做相关的源码&#x2F;伪代码展示和说明，以辅助理解。</p>
+<h2 id="大纲"><a href="#大纲" class="headerlink" title="大纲"></a>大纲</h2><ol>
+<li>ioc概念&amp;实现</li>
+<li>ioc容器增强<ol>
+<li>对bean对象的属性扩展</li>
+<li>对循环依赖问题的处理</li>
+<li>抽象体系规范各层职责</li>
+</ol>
+</li>
+<li>ioc容器全链路回顾</li>
+<li>延伸<ol>
+<li>web环境下的ioc容器</li>
+<li>ioc容器中比较重要的组件</li>
+</ol>
+</li>
+</ol>
+<hr>
+<h1 id="原始ioc"><a href="#原始ioc" class="headerlink" title="原始ioc"></a>原始ioc</h1><h2 id="ioc概念"><a href="#ioc概念" class="headerlink" title="ioc概念"></a>ioc概念</h2><p>使用spring开发时会经常听到两个术语：ioc容器，bean对象。bean对象就是java中的业务对象，常见的就如xxxservice，xxxcomponent，在java开发中，想要使用这些类，我们需要通过手动new一个该类的实例，再使用这个实例进行具体的操作，如执行业务等等。</p>
+<blockquote>
+<p>对bean的定义，bean一般是无状态的，因此没有并发问题，后面会补充</p>
+</blockquote>
+<p>ioc容器存在的意义：框架代替我们去管理上面说的这些实例，我们不需要去考虑这些实例的生命周期，构建，属性注入等等。ioc本身的含义即：控制反转，让spring框架去控制我们的实例。</p>
+<p>没有ioc的情况下，构建并使用一个servicebean过程如下：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">Aservice</span> <span class="variable">a</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">AserviceImpl</span>();</span><br><span class="line"><span class="comment">//如果a里有b的引用</span></span><br><span class="line"><span class="type">Bservice</span> <span class="variable">b</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">BserviceImpl</span>();</span><br><span class="line">a.setB(b);</span><br></pre></td></tr></table></figure>
+
+<p>简单的引用关系还好，如果引用关系复杂需要我们去手动管理，非常不便。且这个bean生成的时机也需要coder自己把握，总不能每次用都去new一个，coder可能需要自己实现一个repository去在服务启动的某个时机注册这些实例。</p>
+<p>有了ioc的情况下，我们构建并使用一个bean的过程如下：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">xml配置</span><br><span class="line">&lt;bean id=<span class="string">&quot;aservice&quot;</span> class=<span class="string">&quot;com.test.service.Aservice&quot;</span> init-method=<span class="string">&quot;init&quot;</span>&gt;</span><br><span class="line">	&lt;property type=<span class="string">&quot;com.test.service.BService&quot;</span> name=<span class="string">&quot;bservice&quot;</span> ref=<span class="string">&quot;bservice&quot;</span>/&gt;</span><br><span class="line">&lt;/bean&gt;</span><br><span class="line"></span><br><span class="line"><span class="type">Aserivce</span> <span class="variable">aservice</span> <span class="operator">=</span> applicationContext.getBean(<span class="string">&quot;aservice&quot;</span>);</span><br></pre></td></tr></table></figure>
+
+<p>这样，只需要在xml配置好我们的bean以及其依赖关系，后续使用的时候就可以从spring上下文中的ioc容器获取这个bean。后续会对xml配置的方式进行优化，如包扫描以及引入注解自动扫描依赖等等。获取bean的方式也不是每次都需要手动从ioc中拿取，一般来说在服务启动时，bean们已经被放到该放的位置，只要做到刚刚说的自动扫描依赖，就可以即拿即用。也就是常见的Autowired处理。</p>
+<p><img src="https://cdn.jsdelivr.net/gh/JhoniWu/picgo/202411131804470.png" alt="image-20241113180400425"></p>
+<p>ioc容器的存在，让spring框架集中管理实例，方便维护，构建简单，降低耦合度。同时基于此概念可以进行更多有意思的操作。如懒加载等等。</p>
+<hr>
+<h2 id="ioc实现"><a href="#ioc实现" class="headerlink" title="ioc实现"></a>ioc实现</h2><p>ioc实现的原理就是：jdk提供的反射机制以及工厂模式。</p>
+<p>以xml形式引入，首先展示下xml的配置方式</p>
+<figure class="highlight xml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="tag">&lt;<span class="name">bean</span> <span class="attr">id</span>=<span class="string">&quot;userService&quot;</span> <span class="attr">class</span>=<span class="string">&quot;com.test.service.UserService&quot;</span>/&gt;</span></span><br><span class="line"><span class="tag">&lt;<span class="name">bean</span> <span class="attr">id</span>=<span class="string">&quot;reentryHandler&quot;</span> <span class="attr">class</span>=<span class="string">&quot;com.test.ReentryRejectedExecutionHandler&quot;</span>&gt;</span><span class="tag">&lt;/<span class="name">bean</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;<span class="name">bean</span> <span class="attr">id</span>=<span class="string">&quot;taskExecutor&quot;</span> <span class="attr">class</span>=<span class="string">&quot;com.minis.scheduling.concurrent.ThreadPoolTaskExecutor&quot;</span></span></span><br><span class="line"><span class="tag">          <span class="attr">init-method</span>=<span class="string">&quot;initializeExecutor&quot;</span>&gt;</span></span><br><span class="line">        <span class="tag">&lt;<span class="name">property</span> <span class="attr">type</span>=<span class="string">&quot;int&quot;</span> <span class="attr">name</span>=<span class="string">&quot;corePoolSize&quot;</span> <span class="attr">value</span>=<span class="string">&quot;2&quot;</span>/&gt;</span></span><br><span class="line">        <span class="tag">&lt;<span class="name">property</span> <span class="attr">type</span>=<span class="string">&quot;int&quot;</span> <span class="attr">name</span>=<span class="string">&quot;maxPoolSize&quot;</span> <span class="attr">value</span>=<span class="string">&quot;4&quot;</span>/&gt;</span></span><br><span class="line"><span class="tag">&lt;/<span class="name">bean</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;<span class="name">bean</span> <span class="attr">id</span>=<span class="string">&quot;asyncExecutionInterceptor&quot;</span> <span class="attr">class</span>=<span class="string">&quot;com.minis.aop.AsyncExecutionInterceptor&quot;</span>&gt;</span></span><br><span class="line">        <span class="tag">&lt;<span class="name">property</span> <span class="attr">type</span>=<span class="string">&quot;com.minis.scheduling.concurrent.ThreadPoolTaskExecutor&quot;</span> <span class="attr">name</span>=<span class="string">&quot;executor&quot;</span> <span class="attr">ref</span>=<span class="string">&quot;taskExecutor&quot;</span>/&gt;</span></span><br><span class="line"><span class="tag">&lt;/<span class="name">bean</span>&gt;</span></span><br></pre></td></tr></table></figure>
+
+<p>xml配置只是一个形式，理论上来说随便怎么配都行，只要你的applicationcontext解析方案和配置的方式一样。回到xml配置，可以通过saxreader等工具对xml进行解析，并将其映射到内存中的BeanDefinition（bean定义）中，扫描完xml就得到了一个beanDefinitionList。每个BeanDefinition通过反射创建出一个实例，存入beanRepository，与其名称一一对应就是singleton-bean。这就是ioc创建bean的大致流程，实际的创建不会像上面说的这么简单，需要考虑到其他bean的注册等等因素。</p>
+<h3 id="组件"><a href="#组件" class="headerlink" title="组件"></a>组件</h3><p>BeanDefinition,内含dependsOn，id，className，beanClass，propertyValues，constructorArgumentValues等</p>
+<p>BeanFactory 提供getBean(String name)能力，提供beanDefinitionList的存储能力。</p>
+<p>SingletonbeanRegistry 实现BeanFactory以及BeanRegistry</p>
+<p>ClassPathXmlApplicationContext 提供对这些组件的组合，流程的运行。</p>
+<h3 id="xml处理流程"><a href="#xml处理流程" class="headerlink" title="xml处理流程"></a>xml处理流程</h3><p><img src="https://cdn.jsdelivr.net/gh/JhoniWu/picgo/202411131700030.png" alt="image-20241113170018926"></p>
+<h3 id="bean存储"><a href="#bean存储" class="headerlink" title="bean存储"></a>bean存储</h3><p>实现了BeanRegistry，提供了bean的存储能力，实际上就是有几个容器，展示一下</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">protected</span> List&lt;String&gt; beanNames=<span class="keyword">new</span> <span class="title class_">ArrayList</span>&lt;&gt;();</span><br><span class="line"><span class="keyword">protected</span> Map&lt;String, Object&gt; singletonObjects =<span class="keyword">new</span> <span class="title class_">ConcurrentHashMap</span>&lt;&gt;(<span class="number">256</span>);</span><br><span class="line"><span class="keyword">protected</span> Map&lt;String,Set&lt;String&gt;&gt; dependentBeanMap = <span class="keyword">new</span> <span class="title class_">ConcurrentHashMap</span>&lt;&gt;(<span class="number">64</span>);</span><br><span class="line"><span class="keyword">protected</span> Map&lt;String,Set&lt;String&gt;&gt; dependenciesForBeanMap = <span class="keyword">new</span> <span class="title class_">ConcurrentHashMap</span>&lt;&gt;(<span class="number">64</span>);</span><br></pre></td></tr></table></figure>
+
+<p>beanFactory在后续getBean时会有registryBean的操作，往beanRegistry里的容器放我们的bean。</p>
+<h3 id="refresh"><a href="#refresh" class="headerlink" title="refresh"></a>refresh</h3><p>直接贴代码加注释，核心是onRefresh方法，真正开始进行bean的实例化，其余的几个方法会提前实例化一些工具bean，例如beanpostprocessor系的实现。onRefresh会进入beanFactory的refresh方法，即对beanDefinitions进行遍历，同时getBean()</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">refresh</span><span class="params">()</span> <span class="keyword">throws</span> BeansException, IllegalStateException &#123;</span><br><span class="line">	<span class="comment">//bean factory处理器</span></span><br><span class="line">	postProcessBeanFactory(getBeanFactory());</span><br><span class="line">	<span class="comment">//注册bean处理器,有初始化前和初始化后两个节点插入</span></span><br><span class="line">	registerBeanPostProcessors(getBeanFactory());</span><br><span class="line">	<span class="comment">//初始化事件发布者</span></span><br><span class="line">	initApplicationEventPublisher();</span><br><span class="line">	<span class="comment">//开始refresh</span></span><br><span class="line">	onRefresh();</span><br><span class="line">	<span class="comment">//注册listener</span></span><br><span class="line">	registerListeners();</span><br><span class="line">	<span class="comment">//bean处理完后通知listener</span></span><br><span class="line">	finishRefresh();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="getBean"><a href="#getBean" class="headerlink" title="getBean"></a>getBean</h3><p>真正实例化bean的方法，autowired、循环依赖处理、aop都与此方法有关联，简单展示一下核心流程。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">//获取bd</span></span><br><span class="line"><span class="type">BeanDefinition</span> <span class="variable">bd</span> <span class="operator">=</span> beanDefinitionMap.get(beanName);</span><br><span class="line"><span class="comment">//创建实例，涉及到createBean和doCreateBean</span></span><br><span class="line">singleton = createBean(bd);</span><br><span class="line"><span class="comment">//注册一下，主要是在map里记录beanname与beanobject的关系</span></span><br><span class="line"><span class="built_in">this</span>.registerBean(beanName, singleton);</span><br><span class="line"><span class="comment">//bean前置处理器，后续会用到</span></span><br><span class="line">singleton = applyBeanPostProcessorsBeforeInitialization(singleton, beanName);</span><br><span class="line"><span class="comment">//init</span></span><br><span class="line">invokeInitMethod(bd, singleton);</span><br><span class="line"><span class="comment">//后置处理器</span></span><br><span class="line">applyBeanPostProcessorsAfterInitialization(singleton, beanName);</span><br></pre></td></tr></table></figure>
+
+<h3 id="createBean-amp-doCreateBean"><a href="#createBean-amp-doCreateBean" class="headerlink" title="createBean&amp;doCreateBean"></a>createBean&amp;doCreateBean</h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">Object</span> <span class="variable">obj</span> <span class="operator">=</span> doCreateBean(bd);</span><br><span class="line">earlySingletonObjects.put(bd.getId(), obj);</span><br><span class="line">clz = Class.forName(bd.getClassName());</span><br><span class="line"><span class="comment">//将属性值注入到bean的初始object中,实际调用handlerProperties方法</span></span><br><span class="line">populateBean(bd, clz, obj);</span><br><span class="line"></span><br><span class="line">doCreateBean()</span><br><span class="line">Class&lt;?&gt;[] paramTypes = <span class="keyword">new</span> <span class="title class_">Class</span>&lt;?&gt;[argumentValues.getArgumentCount()];</span><br><span class="line">Object[] paramValues = <span class="keyword">new</span> <span class="title class_">Object</span>[argumentValues.getArgumentCount()]; </span><br><span class="line">con = clz.getConstructor(paramTypes);</span><br><span class="line">obj = con.newInstance(paramValues);</span><br><span class="line"><span class="keyword">return</span> obj;</span><br></pre></td></tr></table></figure>
+
+<p>至此，便得到了一个singleton，完成了ioc容器的初始化。中间涉及到autowired的实现，循环依赖的处理后面会继续讲，aop这边简单带过</p>
+<h3 id="aop"><a href="#aop" class="headerlink" title="aop"></a>aop</h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">//此处会把我们的singleton从beanpostprocessor里走一圈，aop可能会对其做一层factorybean的封装，让其有代理能力</span></span><br><span class="line">singleton = applyBeanPostProcessorsBeforeInitialization(singleton, beanName);</span><br><span class="line"></span><br><span class="line"><span class="comment">//此处会进入aop的获取代理bean方法，得到的结果就是被封装上切面的代理bean。</span></span><br><span class="line"><span class="keyword">if</span> (singleton <span class="keyword">instanceof</span> FactoryBean) </span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">this</span>.getObjectForBeanInstance(singleton, beanName);</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h1 id="ioc增强"><a href="#ioc增强" class="headerlink" title="ioc增强"></a>ioc增强</h1><p>ioc增强是在其存储，管理bean的基础上，添加一些便于开发者的特性，简单列举几点我的项目中实现的：</p>
+<ol>
+<li>bean之间互相引用（简单来说就是aservice里autowired了bservice）</li>
+<li>beanPostProcessor（autowired机制，以及后续的mvc和aop都会利用到）</li>
+<li>解决循环依赖问题</li>
+</ol>
+<p>在实现这些特性的同时，spring构建了一套结构完善的，抽象的Factory体系。</p>
+<h2 id="autowired"><a href="#autowired" class="headerlink" title="autowired"></a>autowired</h2><p>autowired注解是实际使用spring中用到最多的一个功能，autowired的使用场景就是我们在一个component中去autowried另一个component，这样服务启动之后，service之间能够正常互相调用。</p>
+<p>之前不了解spring原理时有个误区，autowired就是为了spring去做ioc而创造的注解，实际上不是。autowired主要目的跟字面意思差不多，去自动的为某个bean注入另一个bean，避免我们在xml中进行繁琐的配置。</p>
+<p>理解autowired需要重点关注的几个点：</p>
+<ol>
+<li>autowired的介入时机</li>
+<li>autowired具体处理的方式</li>
+</ol>
+<p>autowired的介入时机是在createBean之后，此时singleton里已经有了基本的属性值等，这时我们会进入applyBeanPostProcessorsBeforeInitialization的流程，里面会遍历到<code>AutowiredAnnotationBeanPostProcessor</code> 这个processor，这个就是autowired介入的时机，同时里面也包含autowired的处理流程。</p>
+<p>autowired处理原理很简单，就是通过反射拉取这个obj的所有field，判断是否有autowired注解，有的话就对其进行getbean，然后注入属性。注意这里的getBean会导致我们递归的寻找引用的其他bean。也是后面循环依赖发生的原因。下面贴一点代码</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> Object <span class="title function_">postProcessBeforeInitialization</span><span class="params">(Object bean, String beanName)</span> <span class="keyword">throws</span> BeansException &#123;</span><br><span class="line">	<span class="type">Object</span> <span class="variable">result</span> <span class="operator">=</span> bean;</span><br><span class="line">	Class&lt;?&gt; clazz = bean.getClass();</span><br><span class="line">	Field[] fields = clazz.getDeclaredFields();</span><br><span class="line">	<span class="keyword">if</span>(fields!=<span class="literal">null</span>)&#123;</span><br><span class="line">		<span class="keyword">for</span>(Field field : fields)&#123;</span><br><span class="line">			<span class="comment">//判断是否被autowired注解修饰的类属性</span></span><br><span class="line">			<span class="type">boolean</span> <span class="variable">isAutowired</span> <span class="operator">=</span> field.isAnnotationPresent(Autowired.class);</span><br><span class="line">			<span class="keyword">if</span>(isAutowired)&#123;</span><br><span class="line">				<span class="type">String</span> <span class="variable">fieldName</span> <span class="operator">=</span> field.getName();</span><br><span class="line">                <span class="comment">//出发其他bean的获取</span></span><br><span class="line">				<span class="type">Object</span> <span class="variable">autowiredObj</span> <span class="operator">=</span> <span class="built_in">this</span>.getBeanFactory().getBean(fieldName);</span><br><span class="line">				field.setAccessible(<span class="literal">true</span>);</span><br><span class="line">				field.set(bean, autowiredObj);</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">	<span class="keyword">return</span> result;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="BeanPostProcessor"><a href="#BeanPostProcessor" class="headerlink" title="BeanPostProcessor"></a>BeanPostProcessor</h2><p>上面autowired用到的一个机制，以及ioc容器的refresh里的一个流程提到的机制，即beanPostProcessor。beanPostProcessor用于协助我们在不同的时间点去对bean做一些自定义操作。</p>
+<p>BeanPostProcessor主要提供了两种使用方法：postProcessBeforeInitialization以及postProcessAfterInitialization。其生命周期如下<img src="https://cdn.jsdelivr.net/gh/JhoniWu/picgo/202411131815513.png" alt="image-20241113181538451"></p>
+<h2 id="循环依赖"><a href="#循环依赖" class="headerlink" title="循环依赖"></a>循环依赖</h2><p>简单文字描述一下，ABC三个service互相在内部autowired了对方，这里遇到一个死锁的问题。<img src="https://cdn.jsdelivr.net/gh/JhoniWu/picgo/202411131848084.png" alt="image-20241113184807031"></p>
+<p>此时abc互相阻塞，这里我们需要用到多个容器来中转bean，因为java对象在jvm里是可以先被创建后再赋值的。因此流程如下。以getBean(A)为起点。</p>
+<p><img src="https://cdn.jsdelivr.net/gh/JhoniWu/picgo/202411131849978.png" alt="image-20241113184947906"></p>
+<p>网上都说spring的三级缓存，其第三级缓存在我的项目中被替换成了直接newInstance一个bean，这个三级缓存应该和aop的具体处理方式有关，后续在aop处还会进行研究，目前的循环依赖解决并不彻底，只是最基本的解决方案。还会再更新。</p>
+<hr>
+<p>以上就是ioc这边一些比较基本的流程，后续会继续学习一下spring6里循环依赖的处理方案，以及mvc和aop里ioc容器的运作。这一篇忽略了一些用jdk反射注入属性这些操作，其实原理很简单，就不赘述了。</p>
+<ul>
+<li><input disabled="" type="checkbox"> spring各层职责分离处理</li>
+<li><input disabled="" type="checkbox"> 循环依赖</li>
+<li><input disabled="" type="checkbox"> mvc&amp;aop</li>
+<li><input disabled="" type="checkbox"> ioc比较重要的组件</li>
+</ul>
+
+      </div>
+      
+        <div class="prev-or-next">
+          <div class="post-foot-next">
+            
+          </div>
+          <div class="post-attach">
+            <span class="post-pubtime">
+              <i class="iconfont icon-updatetime mr-10" title="更新时间"></i>
+              2025-02-11 11:14:48
+            </span>
+            
+                  <span class="post-categories">
+                    <i class="iconfont icon-bookmark" title="分类"></i>
+                    
+                    <span class="span--category">
+                      <a href="/categories/%E4%BB%A3%E7%A0%81/" title="代码">
+                        <b>#</b> 代码
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+                  <span class="post-tags">
+                    <i class="iconfont icon-tags mr-10" title="标签"></i>
+                    
+                    <span class="span--tag mr-8">
+                      <a href="/tags/spring/" title="spring">
+                        #spring
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+          </div>
+          <div class="post-foot-prev">
+            
+              <a href="/2024/11/16/spring-ioc%E6%BA%90%E7%A0%81%E5%AE%9E%E7%8E%B0%E5%88%86%E6%9E%90%EF%BC%882%EF%BC%89/" target="_self">
+                <span>下一页</span>
+                <i class="iconfont icon-chevronright"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+    </div>
+    
+  <div id="btn-catalog" class="btn-catalog">
+    <i class="iconfont icon-catalog"></i>
+  </div>
+  <div class="post-catalog hidden" id="catalog">
+    <div class="title">目录</div>
+    <div class="catalog-content">
+      
+        <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#%E5%BC%95%E8%A8%80"><span class="toc-text">引言</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E8%AF%B4%E6%98%8E"><span class="toc-text">说明</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%A4%A7%E7%BA%B2"><span class="toc-text">大纲</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#%E5%8E%9F%E5%A7%8Bioc"><span class="toc-text">原始ioc</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#ioc%E6%A6%82%E5%BF%B5"><span class="toc-text">ioc概念</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#ioc%E5%AE%9E%E7%8E%B0"><span class="toc-text">ioc实现</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E7%BB%84%E4%BB%B6"><span class="toc-text">组件</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#xml%E5%A4%84%E7%90%86%E6%B5%81%E7%A8%8B"><span class="toc-text">xml处理流程</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#bean%E5%AD%98%E5%82%A8"><span class="toc-text">bean存储</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#refresh"><span class="toc-text">refresh</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#getBean"><span class="toc-text">getBean</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#createBean-amp-doCreateBean"><span class="toc-text">createBean&amp;doCreateBean</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#aop"><span class="toc-text">aop</span></a></li></ol></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#ioc%E5%A2%9E%E5%BC%BA"><span class="toc-text">ioc增强</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#autowired"><span class="toc-text">autowired</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#BeanPostProcessor"><span class="toc-text">BeanPostProcessor</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%BE%AA%E7%8E%AF%E4%BE%9D%E8%B5%96"><span class="toc-text">循环依赖</span></a></li></ol></li></ol>
+      
+    </div>
+  </div>
+
+  
+<script src="/js/catalog.js"></script>
+
+
+
+
+    
+      <div class="comments-container">
+        
+
+
+
+
+
+
+
+      </div>
+    
+  </div>
+
+
+        
+<div class="footer">
+  <div class="social">
+    <ul>
+      
+        <li>
+          
+              <a title="github" target="_blank" rel="noopener" href="https://github.com/JhoniWu">
+                <i class="iconfont icon-github"></i>
+              </a>
+              
+        </li>
+        
+    </ul>
+  </div>
+  
+    
+    <div class="footer-more">
+      
+        <a target="_blank" rel="noopener" href="https://github.com/zchengsite/hexo-theme-oranges">Copyright © 2025 Oranges</a>
+        
+    </div>
+  
+    
+    <div class="footer-more">
+      
+        <a target="_blank" rel="noopener" href="https://github.com/zchengsite/hexo-theme-oranges">Theme by Oranges | Powered by Hexo</a>
+        
+    </div>
+  
+  
+    <div class="footer-views">
+      
+          本站总访问量<span id="busuanzi_value_site_pv"></span>次
+        
+      
+          本文总阅读量<span id="busuanzi_value_page_pv"></span>次
+        
+      
+          本站访客数<span id="busuanzi_value_site_uv"></span>人
+        
+      
+    </div>
+  
+</div>
+
+      </div>
+
+      <div class="tools-bar">
+        <div class="back-to-top tools-bar-item hidden">
+  <a href="javascript: void(0)">
+    <i class="iconfont icon-chevronup"></i>
+  </a>
+</div>
+
+
+<script src="/js/backtotop.js"></script>
+
+
+
+        
+  <div class="search-icon tools-bar-item" id="search-icon">
+    <a href="javascript: void(0)">
+      <i class="iconfont icon-search"></i>
+    </a>
+  </div>
+
+  <div class="search-overlay hidden">
+    <div class="search-content" tabindex="0">
+      <div class="search-title">
+        <span class="search-icon-input">
+          <a href="javascript: void(0)">
+            <i class="iconfont icon-search"></i>
+          </a>
+        </span>
+        
+          <input type="text" class="search-input" id="search-input" placeholder="搜索...">
+        
+        <span class="search-close-icon" id="search-close-icon">
+          <a href="javascript: void(0)">
+            <i class="iconfont icon-close"></i>
+          </a>
+        </span>
+      </div>
+      <div class="search-result" id="search-result"></div>
+    </div>
+  </div>
+
+  <script type="text/javascript">
+    var inputArea = document.querySelector("#search-input")
+    var searchOverlayArea = document.querySelector(".search-overlay")
+
+    inputArea.onclick = function() {
+      getSearchFile()
+      this.onclick = null
+    }
+
+    inputArea.onkeydown = function() {
+      if(event.keyCode == 13)
+        return false
+    }
+
+    function openOrHideSearchContent() {
+      let isHidden = searchOverlayArea.classList.contains('hidden')
+      if (isHidden) {
+        searchOverlayArea.classList.remove('hidden')
+        document.body.classList.add('hidden')
+        // inputArea.focus()
+      } else {
+        searchOverlayArea.classList.add('hidden')
+        document.body.classList.remove('hidden')
+      }
+    }
+
+    function blurSearchContent(e) {
+      if (e.target === searchOverlayArea) {
+        openOrHideSearchContent()
+      }
+    }
+
+    document.querySelector("#search-icon").addEventListener("click", openOrHideSearchContent, false)
+    document.querySelector("#search-close-icon").addEventListener("click", openOrHideSearchContent, false)
+    searchOverlayArea.addEventListener("click", blurSearchContent, false)
+
+    var searchFunc = function (path, search_id, content_id) {
+      'use strict';
+      var $input = document.getElementById(search_id);
+      var $resultContent = document.getElementById(content_id);
+      $resultContent.innerHTML = "<ul><span class='local-search-empty'>首次搜索，正在载入索引文件，请稍后……<span></ul>";
+      $.ajax({
+        // 0x01. load xml file
+        url: path,
+        dataType: "xml",
+        success: function (xmlResponse) {
+          // 0x02. parse xml file
+          var datas = $("entry", xmlResponse).map(function () {
+            return {
+              title: $("title", this).text(),
+              content: $("content", this).text(),
+              url: $("url", this).text()
+            };
+          }).get();
+          $resultContent.innerHTML = "";
+
+          $input.addEventListener('input', function () {
+            // 0x03. parse query to keywords list
+            var str = '<ul class=\"search-result-list\">';
+            var keywords = this.value.trim().toLowerCase().split(/[\s\-]+/);
+            $resultContent.innerHTML = "";
+            if (this.value.trim().length <= 0) {
+              return;
+            }
+            // 0x04. perform local searching
+            datas.forEach(function (data) {
+              var isMatch = true;
+              var content_index = [];
+              if (!data.title || data.title.trim() === '') {
+                data.title = "Untitled";
+              }
+              var orig_data_title = data.title.trim();
+              var data_title = orig_data_title.toLowerCase();
+              var orig_data_content = data.content.trim().replace(/<[^>]+>/g, "");
+              var data_content = orig_data_content.toLowerCase();
+              var data_url = data.url;
+              var index_title = -1;
+              var index_content = -1;
+              var first_occur = -1;
+              // only match artiles with not empty contents
+              if (data_content !== '') {
+                keywords.forEach(function (keyword, i) {
+                  index_title = data_title.indexOf(keyword);
+                  index_content = data_content.indexOf(keyword);
+
+                  if (index_title < 0 && index_content < 0) {
+                    isMatch = false;
+                  } else {
+                    if (index_content < 0) {
+                      index_content = 0;
+                    }
+                    if (i == 0) {
+                      first_occur = index_content;
+                    }
+                    // content_index.push({index_content:index_content, keyword_len:keyword_len});
+                  }
+                });
+              } else {
+                isMatch = false;
+              }
+              // 0x05. show search results
+              if (isMatch) {
+                str += "<li><a href='" + data_url + "' class='search-result-title'>" + orig_data_title + "</a>";
+                var content = orig_data_content;
+                if (first_occur >= 0) {
+                  // cut out 100 characters
+                  var start = first_occur - 20;
+                  var end = first_occur + 80;
+
+                  if (start < 0) {
+                    start = 0;
+                  }
+
+                  if (start == 0) {
+                    end = 100;
+                  }
+
+                  if (end > content.length) {
+                    end = content.length;
+                  }
+
+                  var match_content = content.substr(start, end);
+
+                  // highlight all keywords
+                  keywords.forEach(function (keyword) {
+                    var regS = new RegExp(keyword, "gi");
+                    match_content = match_content.replace(regS, "<span class=\"search-keyword\">" + keyword + "</span>");
+                  });
+
+                  str += "<p class=\"search-result-abstract\">" + match_content + "...</p>"
+                }
+                str += "</li>";
+              }
+            });
+            str += "</ul>";
+            if (str.indexOf('<li>') === -1) {
+              return $resultContent.innerHTML = "<ul><span class='local-search-empty'>没有找到内容，请尝试更换检索词。<span></ul>";
+            }
+            $resultContent.innerHTML = str;
+          });
+        },
+        error: function(xhr, status, error) {
+          $resultContent.innerHTML = ""
+          if (xhr.status === 404) {
+            $resultContent.innerHTML = "<ul><span class='local-search-empty'>未找到search.xml文件，具体请参考：<a href='https://github.com/zchengsite/hexo-theme-oranges#configuration' target='_black'>configuration</a><span></ul>";
+          } else {
+            $resultContent.innerHTML = "<ul><span class='local-search-empty'>请求失败，尝试重新刷新页面或稍后重试。<span></ul>";
+          }
+        }
+      });
+      $(document).on('click', '#search-close-icon', function() {
+        $('#search-input').val('');
+        $('#search-result').html('');
+      });
+    }
+
+    var getSearchFile = function() {
+        var path = "/search.xml";
+        searchFunc(path, 'search-input', 'search-result');
+    }
+  </script>
+
+
+
+
+        
+  <div class="tools-bar-item theme-icon" id="switch-color-scheme">
+    <a href="javascript: void(0)">
+      <i id="theme-icon" class="iconfont icon-moon"></i>
+    </a>
+  </div>
+
+  
+<script src="/js/colorscheme.js"></script>
+
+
+
+
+
+        
+  
+    <div class="share-icon tools-bar-item">
+      <a href="javascript: void(0)" id="share-icon">
+        <i class="iconfont iconshare"></i>
+      </a>
+      <div class="share-content hidden">
+        
+          <a class="share-item" href="https://twitter.com/intent/tweet?text=' + spring%20ioc%E6%BA%90%E7%A0%81%E5%AE%9E%E7%8E%B0%E5%88%86%E6%9E%90 + '&url=' + https%3A%2F%2Fjhoniwu.github.io%2F2024%2F11%2F13%2Fspring-ioc%25E6%25BA%2590%25E7%25A0%2581%25E5%25AE%259E%25E7%258E%25B0%25E5%2588%2586%25E6%259E%2590%2F + '" target="_blank" title="Twitter">
+            <i class="iconfont icon-twitter"></i>
+          </a>
+        
+        
+          <a class="share-item" href="https://www.facebook.com/sharer.php?u=https://jhoniwu.github.io/2024/11/13/spring-ioc%E6%BA%90%E7%A0%81%E5%AE%9E%E7%8E%B0%E5%88%86%E6%9E%90/" target="_blank" title="Facebook">
+            <i class="iconfont icon-facebooksquare"></i>
+          </a>
+        
+      </div>
+    </div>
+  
+  
+<script src="/js/shares.js"></script>
+
+
+
+      </div>
+    </div>
+  </body>
+</html>

@@ -15,7 +15,7 @@
   
   <title>
     
-      博客搬迁 
+      archive_a: 2025 
       
       
       |
@@ -116,124 +116,75 @@
 
 
       <div class="flex-container">
-        <!-- 文章详情页，展示文章具体内容，url形式：https://yoursite/文章标题/ -->
-<!-- 同时为「标签tag」，「朋友friend」，「分类categories」，「关于about」页面的承载页面，具体展示取决于page.type -->
+        <!-- 归档页，展示本站所有文章，按照年份降序归类，url形式：https://yoursite/archives/ -->
 
+<!-- last: 按年份把文章分组，当前遍历到的年份 -->
+<!-- now: 当前遍历到的文章的发布年份 -->
 
-  <!-- LaTex Display -->
-
-  
-    <script async type="text/javascript" src="/plugins/mathjax/tex-chtml.js"></script>
-  
-  <script>
-    MathJax = {
-      tex: {
-        inlineMath: [['$', '$'], ['\\(', '\\)']]
-      }
-    }
-  </script>
-
-
-
-
-
-  <!-- clipboard -->
-
-  
-    <script async type="text/javascript" src="/plugins/clipboard.min.js"></script>
-  
-  
-<script src="/js/codeCopy.js"></script>
-
-
-
-
-
-
-
-  
-
-  
-
-  
-
-  
-  <!-- 文章内容页 url形式：https://yoursite/文章标题/ -->
-  <div class="container post-details" id="post-details">
-    <div class="post-content">
-      <div class="post-title">博客搬迁</div>
-      <div class="post-attach">
-        <span class="post-pubtime">
-          <i class="iconfont icon-updatetime mr-10" title="更新时间"></i>
-          2024-12-30 12:23:39
-        </span>
-        
-      </div>
-      <div class="markdown-body">
-        <h1 id="博客搬迁"><a href="#博客搬迁" class="headerlink" title="博客搬迁"></a>博客搬迁</h1><p>技术博客迁移至掘金<a target="_blank" rel="noopener" href="https://juejin.cn/user/3122268754424151">https://juejin.cn/user/3122268754424151</a></p>
-
-      </div>
-      
-        <div class="prev-or-next">
-          <div class="post-foot-next">
-            
-              <a href="/2024/11/16/spring-ioc%E6%BA%90%E7%A0%81%E5%AE%9E%E7%8E%B0%E5%88%86%E6%9E%90%EF%BC%882%EF%BC%89/" target="_self">
-                <i class="iconfont icon-chevronleft"></i>
-                <span>上一页</span>
-              </a>
-            
-          </div>
-          <div class="post-attach">
-            <span class="post-pubtime">
-              <i class="iconfont icon-updatetime mr-10" title="更新时间"></i>
-              2024-12-30 12:23:39
-            </span>
-            
-          </div>
-          <div class="post-foot-prev">
-            
-              <a href="/2025/02/11/%F0%9F%9A%80rocketmq%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E4%B8%8E%E5%AE%9E%E7%8E%B0/" target="_self">
-                <span>下一页</span>
-                <i class="iconfont icon-chevronright"></i>
-              </a>
-            
-          </div>
+<div class="container archives">
+  <div class="post-list">
+    
+        <!-- 后续文章的发布年份呈现 -->
+        <div class="content-title">
+          <h2>
+            <span>2025</span>
+          </h2>
         </div>
       
-    </div>
+      <div class="post-item" title="Leetcode-32-比较有意思的解法">
+        <div class="time-m-d">02-11</div>
+        <div class="title">
+          <a href="/2025/02/11/Leetcode-32-%E6%AF%94%E8%BE%83%E6%9C%89%E6%84%8F%E6%80%9D%E7%9A%84%E8%A7%A3%E6%B3%95/">
+            <span>Leetcode-32-比较有意思的解法</span>
+          </a>
+        </div>
+      </div>
     
-  <div id="btn-catalog" class="btn-catalog">
-    <i class="iconfont icon-catalog"></i>
-  </div>
-  <div class="post-catalog hidden" id="catalog">
-    <div class="title">目录</div>
-    <div class="catalog-content">
-      
-        <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#%E5%8D%9A%E5%AE%A2%E6%90%AC%E8%BF%81"><span class="toc-text">博客搬迁</span></a></li></ol>
-      
-    </div>
-  </div>
-
-  
-<script src="/js/catalog.js"></script>
-
-
-
-
+      <div class="post-item" title="🚀rocketmq源码分析与实现">
+        <div class="time-m-d">02-11</div>
+        <div class="title">
+          <a href="/2025/02/11/%F0%9F%9A%80rocketmq%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E4%B8%8E%E5%AE%9E%E7%8E%B0/">
+            <span>🚀rocketmq源码分析与实现</span>
+          </a>
+        </div>
+      </div>
     
-      <div class="comments-container">
-        
-
-
-
-
-
-
-
+        <!-- 后续文章的发布年份呈现 -->
+        <div class="content-title">
+          <h2>
+            <span>2024</span>
+          </h2>
+        </div>
+      
+      <div class="post-item" title="博客搬迁">
+        <div class="time-m-d">12-30</div>
+        <div class="title">
+          <a href="/2024/12/30/%E8%BF%81%E7%A7%BB/">
+            <span>博客搬迁</span>
+          </a>
+        </div>
+      </div>
+    
+      <div class="post-item" title="spring ioc源码实现分析（2）">
+        <div class="time-m-d">11-16</div>
+        <div class="title">
+          <a href="/2024/11/16/spring-ioc%E6%BA%90%E7%A0%81%E5%AE%9E%E7%8E%B0%E5%88%86%E6%9E%90%EF%BC%882%EF%BC%89/">
+            <span>spring ioc源码实现分析（2）</span>
+          </a>
+        </div>
+      </div>
+    
+      <div class="post-item" title="spring ioc源码实现分析">
+        <div class="time-m-d">11-13</div>
+        <div class="title">
+          <a href="/2024/11/13/spring-ioc%E6%BA%90%E7%A0%81%E5%AE%9E%E7%8E%B0%E5%88%86%E6%9E%90/">
+            <span>spring ioc源码实现分析</span>
+          </a>
+        </div>
       </div>
     
   </div>
-
+</div>
 
         
 <div class="footer">
@@ -503,24 +454,6 @@
 
 
         
-  
-    <div class="share-icon tools-bar-item">
-      <a href="javascript: void(0)" id="share-icon">
-        <i class="iconfont iconshare"></i>
-      </a>
-      <div class="share-content hidden">
-        
-          <a class="share-item" href="https://twitter.com/intent/tweet?text=' + %E5%8D%9A%E5%AE%A2%E6%90%AC%E8%BF%81 + '&url=' + https%3A%2F%2Fjhoniwu.github.io%2F2024%2F12%2F30%2F%25E8%25BF%2581%25E7%25A7%25BB%2F + '" target="_blank" title="Twitter">
-            <i class="iconfont icon-twitter"></i>
-          </a>
-        
-        
-          <a class="share-item" href="https://www.facebook.com/sharer.php?u=https://jhoniwu.github.io/2024/12/30/%E8%BF%81%E7%A7%BB/" target="_blank" title="Facebook">
-            <i class="iconfont icon-facebooksquare"></i>
-          </a>
-        
-      </div>
-    </div>
   
   
 <script src="/js/shares.js"></script>
