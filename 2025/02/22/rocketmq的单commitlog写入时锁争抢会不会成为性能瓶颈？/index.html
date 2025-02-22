@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="zh-CN" color-mode="light">
+
+  <head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="author" content="pr4yer" />
+  <!-- Open Graph Description 简短摘要-->
+  
+  <!-- 用于搜索引擎的文章摘要 -->
+  
+  <meta name="description" content="车轮慢悠悠，人世本无常" />
+  
+  
+  
+  <title>
+    
+      rocketmq的单commitlog写入时锁争抢会不会成为性能瓶颈？ 
+      
+      
+      |
+    
+     pr4yer&#39;s Blog
+  </title>
+
+  
+    <link rel="apple-touch-icon" href="/images/favicon.png">
+    <link rel="icon" href="/images/favicon.png">
+  
+
+  <!-- Raleway-Font -->
+  <link href="https://fonts.googleapis.com/css?family=Raleway&display=swap" rel="stylesheet">
+
+  <!-- hexo site css -->
+  <link rel="stylesheet" href="/css/main.css" />
+  <link rel="stylesheet" href="//at.alicdn.com/t/font_1886449_67xjft27j1l.css" />
+  <!-- 代码块风格 -->
+  
+
+  <!-- jquery3.3.1 -->
+  
+    <script defer type="text/javascript" src="/plugins/jquery.min.js"></script>
+  
+
+  <!-- fancybox -->
+  
+    <link href="/plugins/jquery.fancybox.min.css" rel="stylesheet">
+    <script defer type="text/javascript" src="/plugins/jquery.fancybox.min.js"></script>
+  
+  
+<script src="/js/fancybox.js"></script>
+
+
+  
+
+  
+    <script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+  
+
+  <script>
+    var html = document.documentElement
+    const colorMode = localStorage.getItem('color-mode')
+    if (colorMode) {
+      document.documentElement.setAttribute('color-mode', colorMode)
+    }
+  </script>
+<meta name="generator" content="Hexo 6.3.0"></head>
+
+
+  <body>
+    <div id="app">
+      <div class="header">
+  <div class="avatar">
+    <a href="/">
+      <!-- 头像取消懒加载，添加no-lazy -->
+      
+        <img src="/images/avatar.png" alt="">
+      
+    </a>
+    <div class="nickname"><a href="/">pr4yer</a></div>
+  </div>
+  <div class="navbar">
+    <ul>
+      
+        <li class="nav-item" data-path="/">
+          <a href="/">Home</a>
+        </li>
+      
+        <li class="nav-item" data-path="/archives/">
+          <a href="/archives/">Archives</a>
+        </li>
+      
+        <li class="nav-item" data-path="/categories/">
+          <a href="/categories/">Categories</a>
+        </li>
+      
+        <li class="nav-item" data-path="/tags/">
+          <a href="/tags/">Tags</a>
+        </li>
+      
+        <li class="nav-item" data-path="/friends/">
+          <a href="/friends/">Friends</a>
+        </li>
+      
+        <li class="nav-item" data-path="/about/">
+          <a href="/about/">About</a>
+        </li>
+      
+    </ul>
+  </div>
+</div>
+
+
+<script src="/js/activeNav.js"></script>
+
+
+
+      <div class="flex-container">
+        <!-- 文章详情页，展示文章具体内容，url形式：https://yoursite/文章标题/ -->
+<!-- 同时为「标签tag」，「朋友friend」，「分类categories」，「关于about」页面的承载页面，具体展示取决于page.type -->
+
+
+  <!-- LaTex Display -->
+
+  
+    <script async type="text/javascript" src="/plugins/mathjax/tex-chtml.js"></script>
+  
+  <script>
+    MathJax = {
+      tex: {
+        inlineMath: [['$', '$'], ['\\(', '\\)']]
+      }
+    }
+  </script>
+
+
+
+
+
+  <!-- clipboard -->
+
+  
+    <script async type="text/javascript" src="/plugins/clipboard.min.js"></script>
+  
+  
+<script src="/js/codeCopy.js"></script>
+
+
+
+
+
+
+
+  
+
+  
+
+  
+
+  
+  <!-- 文章内容页 url形式：https://yoursite/文章标题/ -->
+  <div class="container post-details" id="post-details">
+    <div class="post-content">
+      <div class="post-title">rocketmq的单commitlog写入时锁争抢会不会成为性能瓶颈？</div>
+      <div class="post-attach">
+        <span class="post-pubtime">
+          <i class="iconfont icon-updatetime mr-10" title="更新时间"></i>
+          2025-02-22 18:25:44
+        </span>
+        
+      </div>
+      <div class="markdown-body">
+        <h1 id="0-引言"><a href="#0-引言" class="headerlink" title="0.引言"></a>0.引言</h1><p>在回顾rocketmq的消息存储架构时突然想到一个问题，印象里commitlog的写入是需要加锁防止数据错乱的，而rocketmq将所有的topic存放在一个commitlog中，也就是说他的commitlog的写入并发会很小，这样没问题吗？于是我决定带着这个问题再次学习一下rocketmq的消息存储机制。<br>同时，我也在文章末尾提出一种新的设计commitlog的方案，与rocketmq官方实现方式比对，并且进行了理论分析。</p>
+<h1 id="1-对话ds-r1"><a href="#1-对话ds-r1" class="headerlink" title="1.对话ds-r1"></a>1.对话ds-r1</h1><p>问：rocketmq这样的设计是否有问题？</p>
+<p>答：ds分别从锁粒度和锁优化，顺序写入，异步并行三个角度给我说明这样的设计没有问题。我总结了一下：</p>
+<ol>
+<li>锁粒度，其持有锁的时间只有：1计算消息offset，2将消息追加至mappedfile，3更新消息存储状态。锁优化，rocketmq通过自旋等操作优化，我也在rocketmq官网找到一篇abs锁的实践，后续会学习。</li>
+<li>顺序写入，单commitlog的设计让全局消息都能做到顺序写入，也就是顺序写入pro max。同时还提供page cache的优化，通过mmap和异步刷盘机制。</li>
+<li>异步并行，这个点和我的问题关系不大，这个就是mq做的一些基本优化。</li>
+</ol>
+<p>问：对比kafka，rocketmq这样的设计是不是不太好？</p>
+<p>ds给我列了个表格，同时告诉我为啥rocketmq能容忍单线程写入</p>
+<table>
+<thead>
+<tr>
+<th><strong>维度</strong></th>
+<th><strong>Kafka</strong></th>
+<th><strong>RocketMQ</strong></th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>写入模型</strong></td>
+<td>多 Partition 并行写入（每个 Partition 独立文件）。</td>
+<td>全局 CommitLog 顺序写入，逻辑队列异步构建。</td>
+</tr>
+<tr>
+<td><strong>锁竞争</strong></td>
+<td>每个 Partition 独立锁，并行度高。</td>
+<td>全局锁，但锁粒度极细，竞争影响小。</td>
+</tr>
+<tr>
+<td><strong>磁盘 I&#x2F;O</strong></td>
+<td>随机写（依赖多个 Partition 文件）。</td>
+<td>纯顺序写（最大化磁盘吞吐）。</td>
+</tr>
+<tr>
+<td><strong>适用场景</strong></td>
+<td>高并发写入（需分区规划）。</td>
+<td>超高吞吐、低延迟、顺序写优化场景。</td>
+</tr>
+</tbody></table>
+<ol>
+<li>生产者可以将消息合批发送，降低网络IO开销</li>
+<li>通过mmap直接操作内存，避免jvm堆外内存复制</li>
+<li>顺序写充分发挥SSD&#x2F;HDD带宽能力，单线程也能打满磁盘IO</li>
+</ol>
+<p>第三点我没啥概念，顺序写有这么牛逼？而且相关的概念好像在redis那边也看过，不过人家确实是纯内存操作，你这个mmap内存映射也可以套用吗？</p>
+<h1 id="2-rocketmq的消息存储流程"><a href="#2-rocketmq的消息存储流程" class="headerlink" title="2.rocketmq的消息存储流程"></a>2.rocketmq的消息存储流程</h1><p>过一遍rocketmq的消息存储流程，查漏补缺一下。</p>
+<p>在此之前先记录一下我不确定的几个点：</p>
+<ol>
+<li>加锁位置？应该是在mappedbytebuffer去slice到当前offset前加锁</li>
+<li>通过mmap内存映射，可以直接等同于纯内存操作吗？mmap的force是否有开销？</li>
+<li>写入的时机，是不是有什么buffer缓存，先累积一批，再去做mmap的追加写操作？</li>
+</ol>
+<p>参考源码版本，rocketmq-release-5.1.1</p>
+<h2 id="2-1-rocketmq存储结构设计"><a href="#2-1-rocketmq存储结构设计" class="headerlink" title="2.1.rocketmq存储结构设计"></a>2.1.rocketmq存储结构设计</h2><p>producer向broker发送消息时，会以顺序写的方式写入commitlog文件，默认每个commitlog文件的大小为1gb，如果文件写满则新建，commitlog的命名方式为其start-offset，记得在哪看过，这样命名对读消息时查找对应文件很方便。</p>
+<p>commitlog存储的消息数据格式如下：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">msgsize + magic num + crc32 checksum + queueId + tag + queue offset</span><br><span class="line">commitlog offset + sys tag + timestamp + host + store_timestamp + store_host</span><br><span class="line">retry_times + tx_info + msg_len + msg_body + topic_size + topic_info + prop size + prop body</span><br></pre></td></tr></table></figure>
+
+<p>consumequeue按照topic进行分组，以queueId命名文件夹，其中存放的就是consumequeue数组。consume部分很简单，不是本文重点，就不细说了。</p>
+<h2 id="2-2-流程"><a href="#2-2-流程" class="headerlink" title="2.2.流程"></a>2.2.流程</h2><p>producer发送消息到broker的全流程，用ds生成的图，检查后发现没啥问题，后面用文字补充细节。</p>
+<p><img src="https://cdn.jsdelivr.net/gh/JhoniWu/picgo/202502221821979.png" alt="流程"></p>
+<h3 id="数据封装与校验"><a href="#数据封装与校验" class="headerlink" title="数据封装与校验"></a>数据封装与校验</h3><p>消息到broker时，broker创建一个MessageExtBrokerInner对象封装消息数据，包括topic信息，queueid，body，prop等等信息设置到inner里，判断下是否开启了事务。</p>
+<p>开始校验，看下broker role，看下commitlog满没满，看下pagecache是否繁忙，检查消息的长度，检查crc32的checksum</p>
+<h3 id="消息写入"><a href="#消息写入" class="headerlink" title="消息写入"></a>消息写入</h3><p>给前面的inner对象设置store_timestamp，计算crc值放入变量，设置store_host</p>
+<p>对消息长度做一次校验，判断超没超过最大容量，根据消息长度申请一块内存buffer，写入数据。</p>
+<p>找到对应的commitlog文件，判断下要不要init或者创建新的commitlog文件，这一步就要开始加锁了，避免多个线程创建commitlog文件。</p>
+<p>准备写入commitlog，rocketmq有两种方式写</p>
+<ol>
+<li>若开启暂存池，刷盘设置为async，brokerrole为master，就会使用暂存池去写入数据，暂存池原理是：类似线程池，池中有提前申请好的内存，写完后入池，等待系统一并将积攒的buffer池刷入磁盘。这个得到一个普通的writebuffer</li>
+<li>若没有开启暂存池，使用同步映射的方式，则通过mappedbytebuffer映射到对应的commitlog文件，通过slice方式创建共享内存，用于write数据。这个得到一个mmap的writebuffer。</li>
+</ol>
+<p>此前消息已经写入到缓冲区中，将缓冲区内容写入到writebuffer里，返回消息结果。此时进行解锁。</p>
+<p>然后执行刷盘策略，有同步刷盘和异步刷盘两种方式，异步是由mq起一个定时任务执行刷盘。同步就是直接force，异步如果开启了暂存池，有两个阶段。</p>
+<ol>
+<li>commit阶段，将bytebuffer的数据写入commitlog的filechannel中</li>
+<li>flush阶段，将filechannel的force方法。</li>
+</ol>
+<p>关键流程：</p>
+<p>SendMessageProcessor#sendMessage</p>
+<p>DefaultMessageStore#asyncPutMessage调用CommitLog#asyncPutMessage在这里面加了锁</p>
+<p>伪代码-ds生成</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 异步写入消息的核心方法（伪代码）</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">async_put_message</span>(<span class="params">msg</span>):</span><br><span class="line">    <span class="comment"># === 1. 消息预处理 ===</span></span><br><span class="line">    <span class="comment"># 自动升级消息版本（处理长主题）</span></span><br><span class="line">    <span class="comment"># 标记IPv6地址</span></span><br><span class="line">    <span class="comment"># === 2. 高可用检查 ===</span></span><br><span class="line">    need_ack_num = <span class="number">1</span>  <span class="comment"># 默认需要1个副本确认</span></span><br><span class="line">    <span class="keyword">if</span> 需要处理HA(消息):</span><br><span class="line">    <span class="comment"># === 3. 并发控制 ===</span></span><br><span class="line">    topic_queue_key = 生成主题队列键(msg)</span><br><span class="line">    <span class="keyword">try</span>:</span><br><span class="line">        获取主题队列锁(topic_queue_key)  <span class="comment"># 保证同一队列顺序写入</span></span><br><span class="line">        <span class="comment"># 分配消息偏移量（非从节点且未启用去重时）</span></span><br><span class="line">        <span class="keyword">if</span> 需要分配偏移量:</span><br><span class="line">            分配消息偏移(msg)</span><br><span class="line">        <span class="comment"># === 4. 消息编码 ===</span></span><br><span class="line">        编码结果 = 线程本地编码器.编码(msg)</span><br><span class="line">        <span class="keyword">if</span> 编码失败:</span><br><span class="line">            <span class="keyword">return</span> 编码错误结果</span><br><span class="line">        <span class="comment"># === 5. 文件写入 ===</span></span><br><span class="line">        <span class="keyword">try</span>:</span><br><span class="line">            获取写入锁()  <span class="comment"># 自旋锁或可重入锁</span></span><br><span class="line">            开始时间 = 当前时间()</span><br><span class="line">            <span class="comment"># 获取或创建内存映射文件</span></span><br><span class="line">            mapped_file = 获取最后一个内存映射文件()</span><br><span class="line">            <span class="keyword">if</span> mapped_file <span class="keyword">is</span> <span class="literal">None</span> <span class="keyword">or</span> mapped_file已满:</span><br><span class="line">                mapped_file = 创建新内存映射文件()</span><br><span class="line">            <span class="comment"># 追加消息到文件</span></span><br><span class="line">            追加结果 = mapped_file.追加消息(msg, 回调函数)</span><br><span class="line">            <span class="comment"># 处理不同追加结果</span></span><br><span class="line">            <span class="keyword">if</span> 追加结果 == PUT_OK:</span><br><span class="line">                更新提交日志元数据(msg, 追加结果)</span><br><span class="line">            <span class="keyword">elif</span> 追加结果 == END_OF_FILE:  <span class="comment"># 文件已满</span></span><br><span class="line">                创建新文件后重试追加()</span><br><span class="line">            <span class="keyword">else</span>:  <span class="comment"># 处理非法消息等错误</span></span><br><span class="line">                <span class="keyword">return</span> 对应错误结果</span><br><span class="line">            <span class="comment"># 记录锁内耗时</span></span><br><span class="line">            耗时 = 当前时间() - 开始时间</span><br><span class="line">            <span class="keyword">if</span> 耗时 &gt; 500ms:</span><br><span class="line">                记录警告日志()</span><br><span class="line">        <span class="keyword">finally</span>:</span><br><span class="line">            释放写入锁()</span><br><span class="line">        <span class="comment"># === 6. 更新统计信息 ===</span></span><br><span class="line">        统计服务.记录写入次数(msg.主题, 消息数量)</span><br><span class="line">        统计服务.记录写入字节(msg.主题, 写入字节数)</span><br><span class="line">    <span class="keyword">finally</span>:</span><br><span class="line">        释放主题队列锁()</span><br><span class="line">    <span class="comment"># === 7. 后处理 ===</span></span><br><span class="line">    <span class="keyword">if</span> 需要解锁已满文件:</span><br><span class="line">        解锁内存映射文件()</span><br><span class="line">    <span class="comment"># 处理磁盘刷盘和HA复制（异步）</span></span><br><span class="line">    最终结果 = 处理磁盘刷盘及HA同步(追加结果, msg, need_ack_num)</span><br><span class="line">    <span class="keyword">return</span> 包装为CompletableFuture(最终结果)</span><br></pre></td></tr></table></figure>
+
+<p>涉及到一个consumequeue锁，一个commitlog锁</p>
+<p>topicqueuekey为topic-queueid，确保当前队列只有一个线程能够执行写入。putMessageLock则是从DefaultMessageStore中获取来的，与commitlogfile绑定。至此可以看到，lock的过程是与预期一样的。</p>
+<p>持有锁时主要做了以下操作</p>
+<ol>
+<li>获取上一次写入的mappedfile</li>
+<li>更新存储时间戳</li>
+<li>看下mappedfile是否空or满，进行对应操作</li>
+<li>append消息（buffer形式）</li>
+</ol>
+<h2 id="2-3-分析"><a href="#2-3-分析" class="headerlink" title="2.3.分析"></a>2.3.分析</h2><p>消息的内存流转状态变化：</p>
+<p>netty的bytebuf→堆内存对象messageextbrokerinner→encode之后变成直接内存bytebuffer</p>
+<p>然后被mappedbytebuffer做append操作</p>
+<p>数据从网卡先复制到堆内存，再从堆内存到直接内存，然后追加到mmap映射的内存后等待刷盘。</p>
+<p>netty那边有自己的优化，到堆中之后，也全都在用户态就完成了复制，因此速度也很快。同时，写入的数据利用到了pagecache机制，并非直接写磁盘，这一部分属于mmap的优化。刷盘的时候利用dma，无需cpu参与数据搬运，同时还是顺序写入。</p>
+<p>联想到一个面试题，为啥rocketmq快，可以这样回答：</p>
+<ol>
+<li>netty自带的优化</li>
+<li>bytebuffer→mappedbytebuffer，无需用户态切换至内核态</li>
+<li>mmap零拷贝优化</li>
+<li>dma+顺序写的优化</li>
+<li>暂存池机制在批量写场景也有很大帮助</li>
+</ol>
+<p>还有一些极端场景的优化</p>
+<ol>
+<li>mmapfile缺页，需要加锁重新load，但是rocketmq的mmapfile很大，发生缺页次数不会太频繁</li>
+<li>刷盘策略，rocketmq也提供灵活刷盘机制</li>
+<li>锁竞争，rocketmq尽量缩小了锁的粒度</li>
+</ol>
+<p>用ds生成的预测延时，供参考</p>
+<table>
+<thead>
+<tr>
+<th><code>ByteBuffer</code> 拷贝到 <code>MappedByteBuffer</code></th>
+<th>100~500 ns</th>
+<th>纯内存操作，取决于数据大小</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>缺页中断</td>
+<td>1~10 μs</td>
+<td>与文件预分配和硬件相关</td>
+</tr>
+<tr>
+<td>异步刷盘</td>
+<td>0 ns（异步）</td>
+<td>无感知延迟，刷盘由后台线程完成</td>
+</tr>
+<tr>
+<td>同步刷盘</td>
+<td>1~10 ms</td>
+<td>依赖磁盘 IOPS（如 NVMe SSD 可达 0.1ms）</td>
+</tr>
+</tbody></table>
+<p>总之每一步都做到了机制的优化，整体的性能确实是不差的，但是能不能做到更好呢？</p>
+<h1 id="3-如果使用分topic方式存储，会怎么样？"><a href="#3-如果使用分topic方式存储，会怎么样？" class="headerlink" title="3.如果使用分topic方式存储，会怎么样？"></a>3.如果使用分topic方式存储，会怎么样？</h1><h2 id="3-1方案"><a href="#3-1方案" class="headerlink" title="3.1方案"></a>3.1方案</h2><p>采用分topic存储，类似consumequeue，每个topic目录下存放commitlog文件，进行自增。</p>
+<h2 id="3-2理论分析"><a href="#3-2理论分析" class="headerlink" title="3.2理论分析"></a>3.2理论分析</h2><ol>
+<li>锁争抢</li>
+</ol>
+<p>原流程获取putmessage lock时，不同topic会发生争抢锁操作，同一topic有重入锁</p>
+<p>改造流程获取putmessage lock时，不同topic不会发生争抢操作，理论上来说吞吐量大大提高。</p>
+<ol>
+<li>顺序写</li>
+</ol>
+<p>原流程可以保证全局的顺序写，改造流程单topic视角下可以顺序写，全局从磁盘角度来看是随机写</p>
+<ol>
+<li>文件本身</li>
+</ol>
+<p>原流程单commitlog，分配大空间，缺页情况很少发生，改造后commitlog单文件肯定不能分配这么大，要往百倍往上打折，缺页情况发生的会很频繁。</p>
+<ol>
+<li>主从复制</li>
+</ol>
+<p>原来只需要复制单一commitlog流，改造后比较复杂，不过可以采用主节点主动推送的方式去同步，但是主从在核对时比较麻烦。</p>
+<p>实际测试，感觉有点难度，改rocketmq源码感觉过于复杂，以后技术提升了，我会模拟两个场景做点简单测试。</p>
+<h1 id="和redis对比"><a href="#和redis对比" class="headerlink" title="和redis对比"></a>和redis对比</h1><p>思考这个场景的时候，让我想到了经常被问到的一个面试题：为什么redis采用单线程处理用户指令？</p>
+<p>既然commitlog的写入并发如此低，能不能用单线程去处理producer的发送操作呢？答案肯定是不能的，首先就是rocketmq本身有很多异步化操作，其持锁的时间非常短，那代表整个流程的开销还是很高的，而redis是纯内存操作，其数据结构简单，指令操作也很简单，整体流程肯定是比rocketmq存消息的开销要小很多。</p>
+<p>不过rocketmq的设计思想我觉得和redis还是有一点共通之处的，rocketmq在尽量简化并发模型，利用内存操作和顺序写提高性能。</p>
+
+      </div>
+      
+        <div class="prev-or-next">
+          <div class="post-foot-next">
+            
+              <a href="/2025/02/12/%E5%BB%B6%E8%BF%9F%E6%B6%88%E6%81%AF%E6%BA%90%E7%A0%81%E4%B8%8E%E6%89%8B%E5%8A%A8%E5%AE%9E%E7%8E%B0/" target="_self">
+                <i class="iconfont icon-chevronleft"></i>
+                <span>上一页</span>
+              </a>
+            
+          </div>
+          <div class="post-attach">
+            <span class="post-pubtime">
+              <i class="iconfont icon-updatetime mr-10" title="更新时间"></i>
+              2025-02-22 18:25:44
+            </span>
+            
+          </div>
+          <div class="post-foot-prev">
+            
+          </div>
+        </div>
+      
+    </div>
+    
+  <div id="btn-catalog" class="btn-catalog">
+    <i class="iconfont icon-catalog"></i>
+  </div>
+  <div class="post-catalog hidden" id="catalog">
+    <div class="title">目录</div>
+    <div class="catalog-content">
+      
+        <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#0-%E5%BC%95%E8%A8%80"><span class="toc-text">0.引言</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#1-%E5%AF%B9%E8%AF%9Dds-r1"><span class="toc-text">1.对话ds-r1</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#2-rocketmq%E7%9A%84%E6%B6%88%E6%81%AF%E5%AD%98%E5%82%A8%E6%B5%81%E7%A8%8B"><span class="toc-text">2.rocketmq的消息存储流程</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#2-1-rocketmq%E5%AD%98%E5%82%A8%E7%BB%93%E6%9E%84%E8%AE%BE%E8%AE%A1"><span class="toc-text">2.1.rocketmq存储结构设计</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#2-2-%E6%B5%81%E7%A8%8B"><span class="toc-text">2.2.流程</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%95%B0%E6%8D%AE%E5%B0%81%E8%A3%85%E4%B8%8E%E6%A0%A1%E9%AA%8C"><span class="toc-text">数据封装与校验</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%B6%88%E6%81%AF%E5%86%99%E5%85%A5"><span class="toc-text">消息写入</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#2-3-%E5%88%86%E6%9E%90"><span class="toc-text">2.3.分析</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#3-%E5%A6%82%E6%9E%9C%E4%BD%BF%E7%94%A8%E5%88%86topic%E6%96%B9%E5%BC%8F%E5%AD%98%E5%82%A8%EF%BC%8C%E4%BC%9A%E6%80%8E%E4%B9%88%E6%A0%B7%EF%BC%9F"><span class="toc-text">3.如果使用分topic方式存储，会怎么样？</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#3-1%E6%96%B9%E6%A1%88"><span class="toc-text">3.1方案</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#3-2%E7%90%86%E8%AE%BA%E5%88%86%E6%9E%90"><span class="toc-text">3.2理论分析</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#%E5%92%8Credis%E5%AF%B9%E6%AF%94"><span class="toc-text">和redis对比</span></a></li></ol>
+      
+    </div>
+  </div>
+
+  
+<script src="/js/catalog.js"></script>
+
+
+
+
+    
+      <div class="comments-container">
+        
+
+
+
+
+
+
+
+      </div>
+    
+  </div>
+
+
+        
+<div class="footer">
+  <div class="social">
+    <ul>
+      
+        <li>
+          
+              <a title="github" target="_blank" rel="noopener" href="https://github.com/JhoniWu">
+                <i class="iconfont icon-github"></i>
+              </a>
+              
+        </li>
+        
+    </ul>
+  </div>
+  
+    
+    <div class="footer-more">
+      
+        <a target="_blank" rel="noopener" href="https://github.com/zchengsite/hexo-theme-oranges">Copyright © 2025 Oranges</a>
+        
+    </div>
+  
+    
+    <div class="footer-more">
+      
+        <a target="_blank" rel="noopener" href="https://github.com/zchengsite/hexo-theme-oranges">Theme by Oranges | Powered by Hexo</a>
+        
+    </div>
+  
+  
+    <div class="footer-views">
+      
+          本站总访问量<span id="busuanzi_value_site_pv"></span>次
+        
+      
+          本文总阅读量<span id="busuanzi_value_page_pv"></span>次
+        
+      
+          本站访客数<span id="busuanzi_value_site_uv"></span>人
+        
+      
+    </div>
+  
+</div>
+
+      </div>
+
+      <div class="tools-bar">
+        <div class="back-to-top tools-bar-item hidden">
+  <a href="javascript: void(0)">
+    <i class="iconfont icon-chevronup"></i>
+  </a>
+</div>
+
+
+<script src="/js/backtotop.js"></script>
+
+
+
+        
+  <div class="search-icon tools-bar-item" id="search-icon">
+    <a href="javascript: void(0)">
+      <i class="iconfont icon-search"></i>
+    </a>
+  </div>
+
+  <div class="search-overlay hidden">
+    <div class="search-content" tabindex="0">
+      <div class="search-title">
+        <span class="search-icon-input">
+          <a href="javascript: void(0)">
+            <i class="iconfont icon-search"></i>
+          </a>
+        </span>
+        
+          <input type="text" class="search-input" id="search-input" placeholder="搜索...">
+        
+        <span class="search-close-icon" id="search-close-icon">
+          <a href="javascript: void(0)">
+            <i class="iconfont icon-close"></i>
+          </a>
+        </span>
+      </div>
+      <div class="search-result" id="search-result"></div>
+    </div>
+  </div>
+
+  <script type="text/javascript">
+    var inputArea = document.querySelector("#search-input")
+    var searchOverlayArea = document.querySelector(".search-overlay")
+
+    inputArea.onclick = function() {
+      getSearchFile()
+      this.onclick = null
+    }
+
+    inputArea.onkeydown = function() {
+      if(event.keyCode == 13)
+        return false
+    }
+
+    function openOrHideSearchContent() {
+      let isHidden = searchOverlayArea.classList.contains('hidden')
+      if (isHidden) {
+        searchOverlayArea.classList.remove('hidden')
+        document.body.classList.add('hidden')
+        // inputArea.focus()
+      } else {
+        searchOverlayArea.classList.add('hidden')
+        document.body.classList.remove('hidden')
+      }
+    }
+
+    function blurSearchContent(e) {
+      if (e.target === searchOverlayArea) {
+        openOrHideSearchContent()
+      }
+    }
+
+    document.querySelector("#search-icon").addEventListener("click", openOrHideSearchContent, false)
+    document.querySelector("#search-close-icon").addEventListener("click", openOrHideSearchContent, false)
+    searchOverlayArea.addEventListener("click", blurSearchContent, false)
+
+    var searchFunc = function (path, search_id, content_id) {
+      'use strict';
+      var $input = document.getElementById(search_id);
+      var $resultContent = document.getElementById(content_id);
+      $resultContent.innerHTML = "<ul><span class='local-search-empty'>首次搜索，正在载入索引文件，请稍后……<span></ul>";
+      $.ajax({
+        // 0x01. load xml file
+        url: path,
+        dataType: "xml",
+        success: function (xmlResponse) {
+          // 0x02. parse xml file
+          var datas = $("entry", xmlResponse).map(function () {
+            return {
+              title: $("title", this).text(),
+              content: $("content", this).text(),
+              url: $("url", this).text()
+            };
+          }).get();
+          $resultContent.innerHTML = "";
+
+          $input.addEventListener('input', function () {
+            // 0x03. parse query to keywords list
+            var str = '<ul class=\"search-result-list\">';
+            var keywords = this.value.trim().toLowerCase().split(/[\s\-]+/);
+            $resultContent.innerHTML = "";
+            if (this.value.trim().length <= 0) {
+              return;
+            }
+            // 0x04. perform local searching
+            datas.forEach(function (data) {
+              var isMatch = true;
+              var content_index = [];
+              if (!data.title || data.title.trim() === '') {
+                data.title = "Untitled";
+              }
+              var orig_data_title = data.title.trim();
+              var data_title = orig_data_title.toLowerCase();
+              var orig_data_content = data.content.trim().replace(/<[^>]+>/g, "");
+              var data_content = orig_data_content.toLowerCase();
+              var data_url = data.url;
+              var index_title = -1;
+              var index_content = -1;
+              var first_occur = -1;
+              // only match artiles with not empty contents
+              if (data_content !== '') {
+                keywords.forEach(function (keyword, i) {
+                  index_title = data_title.indexOf(keyword);
+                  index_content = data_content.indexOf(keyword);
+
+                  if (index_title < 0 && index_content < 0) {
+                    isMatch = false;
+                  } else {
+                    if (index_content < 0) {
+                      index_content = 0;
+                    }
+                    if (i == 0) {
+                      first_occur = index_content;
+                    }
+                    // content_index.push({index_content:index_content, keyword_len:keyword_len});
+                  }
+                });
+              } else {
+                isMatch = false;
+              }
+              // 0x05. show search results
+              if (isMatch) {
+                str += "<li><a href='" + data_url + "' class='search-result-title'>" + orig_data_title + "</a>";
+                var content = orig_data_content;
+                if (first_occur >= 0) {
+                  // cut out 100 characters
+                  var start = first_occur - 20;
+                  var end = first_occur + 80;
+
+                  if (start < 0) {
+                    start = 0;
+                  }
+
+                  if (start == 0) {
+                    end = 100;
+                  }
+
+                  if (end > content.length) {
+                    end = content.length;
+                  }
+
+                  var match_content = content.substr(start, end);
+
+                  // highlight all keywords
+                  keywords.forEach(function (keyword) {
+                    var regS = new RegExp(keyword, "gi");
+                    match_content = match_content.replace(regS, "<span class=\"search-keyword\">" + keyword + "</span>");
+                  });
+
+                  str += "<p class=\"search-result-abstract\">" + match_content + "...</p>"
+                }
+                str += "</li>";
+              }
+            });
+            str += "</ul>";
+            if (str.indexOf('<li>') === -1) {
+              return $resultContent.innerHTML = "<ul><span class='local-search-empty'>没有找到内容，请尝试更换检索词。<span></ul>";
+            }
+            $resultContent.innerHTML = str;
+          });
+        },
+        error: function(xhr, status, error) {
+          $resultContent.innerHTML = ""
+          if (xhr.status === 404) {
+            $resultContent.innerHTML = "<ul><span class='local-search-empty'>未找到search.xml文件，具体请参考：<a href='https://github.com/zchengsite/hexo-theme-oranges#configuration' target='_black'>configuration</a><span></ul>";
+          } else {
+            $resultContent.innerHTML = "<ul><span class='local-search-empty'>请求失败，尝试重新刷新页面或稍后重试。<span></ul>";
+          }
+        }
+      });
+      $(document).on('click', '#search-close-icon', function() {
+        $('#search-input').val('');
+        $('#search-result').html('');
+      });
+    }
+
+    var getSearchFile = function() {
+        var path = "/search.xml";
+        searchFunc(path, 'search-input', 'search-result');
+    }
+  </script>
+
+
+
+
+        
+  <div class="tools-bar-item theme-icon" id="switch-color-scheme">
+    <a href="javascript: void(0)">
+      <i id="theme-icon" class="iconfont icon-moon"></i>
+    </a>
+  </div>
+
+  
+<script src="/js/colorscheme.js"></script>
+
+
+
+
+
+        
+  
+    <div class="share-icon tools-bar-item">
+      <a href="javascript: void(0)" id="share-icon">
+        <i class="iconfont iconshare"></i>
+      </a>
+      <div class="share-content hidden">
+        
+          <a class="share-item" href="https://twitter.com/intent/tweet?text=' + rocketmq%E7%9A%84%E5%8D%95commitlog%E5%86%99%E5%85%A5%E6%97%B6%E9%94%81%E4%BA%89%E6%8A%A2%E4%BC%9A%E4%B8%8D%E4%BC%9A%E6%88%90%E4%B8%BA%E6%80%A7%E8%83%BD%E7%93%B6%E9%A2%88%EF%BC%9F + '&url=' + https%3A%2F%2Fjhoniwu.github.io%2F2025%2F02%2F22%2Frocketmq%25E7%259A%2584%25E5%258D%2595commitlog%25E5%2586%2599%25E5%2585%25A5%25E6%2597%25B6%25E9%2594%2581%25E4%25BA%2589%25E6%258A%25A2%25E4%25BC%259A%25E4%25B8%258D%25E4%25BC%259A%25E6%2588%2590%25E4%25B8%25BA%25E6%2580%25A7%25E8%2583%25BD%25E7%2593%25B6%25E9%25A2%2588%25EF%25BC%259F%2F + '" target="_blank" title="Twitter">
+            <i class="iconfont icon-twitter"></i>
+          </a>
+        
+        
+          <a class="share-item" href="https://www.facebook.com/sharer.php?u=https://jhoniwu.github.io/2025/02/22/rocketmq%E7%9A%84%E5%8D%95commitlog%E5%86%99%E5%85%A5%E6%97%B6%E9%94%81%E4%BA%89%E6%8A%A2%E4%BC%9A%E4%B8%8D%E4%BC%9A%E6%88%90%E4%B8%BA%E6%80%A7%E8%83%BD%E7%93%B6%E9%A2%88%EF%BC%9F/" target="_blank" title="Facebook">
+            <i class="iconfont icon-facebooksquare"></i>
+          </a>
+        
+      </div>
+    </div>
+  
+  
+<script src="/js/shares.js"></script>
+
+
+
+      </div>
+    </div>
+  </body>
+</html>

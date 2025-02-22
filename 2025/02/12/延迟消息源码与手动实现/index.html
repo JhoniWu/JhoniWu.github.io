@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="zh-CN" color-mode="light">
+
+  <head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="author" content="pr4yer" />
+  <!-- Open Graph Description 简短摘要-->
+  
+  <!-- 用于搜索引擎的文章摘要 -->
+  
+  <meta name="description" content="车轮慢悠悠，人世本无常" />
+  
+  
+  
+  <title>
+    
+      延迟消息源码与手动实现 
+      
+      
+      |
+    
+     pr4yer&#39;s Blog
+  </title>
+
+  
+    <link rel="apple-touch-icon" href="/images/favicon.png">
+    <link rel="icon" href="/images/favicon.png">
+  
+
+  <!-- Raleway-Font -->
+  <link href="https://fonts.googleapis.com/css?family=Raleway&display=swap" rel="stylesheet">
+
+  <!-- hexo site css -->
+  <link rel="stylesheet" href="/css/main.css" />
+  <link rel="stylesheet" href="//at.alicdn.com/t/font_1886449_67xjft27j1l.css" />
+  <!-- 代码块风格 -->
+  
+
+  <!-- jquery3.3.1 -->
+  
+    <script defer type="text/javascript" src="/plugins/jquery.min.js"></script>
+  
+
+  <!-- fancybox -->
+  
+    <link href="/plugins/jquery.fancybox.min.css" rel="stylesheet">
+    <script defer type="text/javascript" src="/plugins/jquery.fancybox.min.js"></script>
+  
+  
+<script src="/js/fancybox.js"></script>
+
+
+  
+
+  
+    <script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+  
+
+  <script>
+    var html = document.documentElement
+    const colorMode = localStorage.getItem('color-mode')
+    if (colorMode) {
+      document.documentElement.setAttribute('color-mode', colorMode)
+    }
+  </script>
+<meta name="generator" content="Hexo 6.3.0"></head>
+
+
+  <body>
+    <div id="app">
+      <div class="header">
+  <div class="avatar">
+    <a href="/">
+      <!-- 头像取消懒加载，添加no-lazy -->
+      
+        <img src="/images/avatar.png" alt="">
+      
+    </a>
+    <div class="nickname"><a href="/">pr4yer</a></div>
+  </div>
+  <div class="navbar">
+    <ul>
+      
+        <li class="nav-item" data-path="/">
+          <a href="/">Home</a>
+        </li>
+      
+        <li class="nav-item" data-path="/archives/">
+          <a href="/archives/">Archives</a>
+        </li>
+      
+        <li class="nav-item" data-path="/categories/">
+          <a href="/categories/">Categories</a>
+        </li>
+      
+        <li class="nav-item" data-path="/tags/">
+          <a href="/tags/">Tags</a>
+        </li>
+      
+        <li class="nav-item" data-path="/friends/">
+          <a href="/friends/">Friends</a>
+        </li>
+      
+        <li class="nav-item" data-path="/about/">
+          <a href="/about/">About</a>
+        </li>
+      
+    </ul>
+  </div>
+</div>
+
+
+<script src="/js/activeNav.js"></script>
+
+
+
+      <div class="flex-container">
+        <!-- 文章详情页，展示文章具体内容，url形式：https://yoursite/文章标题/ -->
+<!-- 同时为「标签tag」，「朋友friend」，「分类categories」，「关于about」页面的承载页面，具体展示取决于page.type -->
+
+
+  <!-- LaTex Display -->
+
+  
+    <script async type="text/javascript" src="/plugins/mathjax/tex-chtml.js"></script>
+  
+  <script>
+    MathJax = {
+      tex: {
+        inlineMath: [['$', '$'], ['\\(', '\\)']]
+      }
+    }
+  </script>
+
+
+
+
+
+  <!-- clipboard -->
+
+  
+    <script async type="text/javascript" src="/plugins/clipboard.min.js"></script>
+  
+  
+<script src="/js/codeCopy.js"></script>
+
+
+
+
+
+
+
+  
+
+  
+
+  
+
+  
+  <!-- 文章内容页 url形式：https://yoursite/文章标题/ -->
+  <div class="container post-details" id="post-details">
+    <div class="post-content">
+      <div class="post-title">延迟消息源码与手动实现</div>
+      <div class="post-attach">
+        <span class="post-pubtime">
+          <i class="iconfont icon-updatetime mr-10" title="更新时间"></i>
+          2025-02-22 18:17:40
+        </span>
+        
+              <span class="post-tags">
+                <i class="iconfont icon-tags mr-10" title="标签"></i>
+                
+                <span class="span--tag mr-8">
+                  <a href="/tags/rocketmq/" title="rocketmq">
+                    #rocketmq
+                  </a>
+                </span>
+                
+              </span>
+          
+      </div>
+      <div class="markdown-body">
+        <p>参考代码：</p>
+<p>rocketmq-release-5.1.1</p>
+<p>参考文章：</p>
+<p><a target="_blank" rel="noopener" href="https://segmentfault.com/a/1190000044097350">https://segmentfault.com/a/1190000044097350</a></p>
+<p><a target="_blank" rel="noopener" href="https://juejin.cn/post/7306102616312479798#heading-8">https://juejin.cn/post/7306102616312479798#heading-8</a></p>
+<hr>
+<h1 id="0-引言"><a href="#0-引言" class="headerlink" title="0.引言"></a>0.引言</h1><p>rocketmq5.x中实现了任意时间的定时消息，4.x以前只有设置level匹配固定的延迟等级。核心差异在于rocketmq5.x引入了时间轮timerwheel组件。</p>
+<p>然后我简单实现了一个基于内存的时间轮，其处理流程大致为：broker收到消息，判断为定时&#x2F;延迟消息，包装放入timewheel中，内存中的timerwheel自动轮转，扫描到当前slot时就将消息拆解出来，做真实的投递。但这样做是有问题的，消息不可能一直放在内存中的，这样会大量占据服务器资源，如果延迟消息太多可能会搞垮服务器。</p>
+<p>因此我决定参考rocketmq的实现方式，自己实现一套延迟消息机制。文章后面会附上我的代码。</p>
+<hr>
+<h1 id="1-rocketmq5-x中时间轮的实现方式"><a href="#1-rocketmq5-x中时间轮的实现方式" class="headerlink" title="1.rocketmq5.x中时间轮的实现方式"></a>1.rocketmq5.x中时间轮的实现方式</h1><h2 id="1-1文件部分"><a href="#1-1文件部分" class="headerlink" title="1.1文件部分"></a>1.1文件部分</h2><p>rocketmq通过timerwheel文件和timerlog文件来实现定时&#x2F;延迟消息。两个都是需要本地存储的文件。</p>
+<h3 id="timerwheel"><a href="#timerwheel" class="headerlink" title="timerwheel"></a>timerwheel</h3><p>单位格式为：delayed_time(8b) + first_pos(8b) + last_pos(8b) + msg_count(4b)</p>
+<p>delayed_time也就是时间轮的序列，两个position标识timerlog中的开始和结束的物理偏移量，读取时按从后往前的顺序读，找到这个delayed_time对应的所有消息。</p>
+<h3 id="timerlog"><a href="#timerlog" class="headerlink" title="timerlog"></a>timerlog</h3><p>timerlog文件类似于consumequeue文件，其存储的单位格式为：</p>
+<p>size + prev_pos + next_pos + delayed_time + offset_real + size_real + magic + hash_topic</p>
+<p>单位的大小也是固定的。</p>
+<h2 id="1-2整体流程"><a href="#1-2整体流程" class="headerlink" title="1.2整体流程"></a>1.2整体流程</h2><p>简单总结一下rocketmq是怎么处理定时消息的。</p>
+<p>涉及到的线程</p>
+<ol>
+<li>TimerEnqueueGetService</li>
+<li>TimerEnqueuePutService</li>
+<li>TimerDequeueGetService</li>
+<li>TimerDequeueGetMessageService</li>
+<li>TimerDequeuePutMessageService</li>
+</ol>
+<p>涉及到的队列</p>
+<ol>
+<li>enqueuePutQueue</li>
+<li>dequeueGetQueue</li>
+<li>dequeuePutQueue</li>
+</ol>
+<p>围绕这几个线程和queue来看，rocketmq的时间轮就非常清晰。</p>
+<p>流程如下：</p>
+<ol>
+<li><p>将普通消息转换为wheel_time消息，写入timer_topic，在PutMessage前处理</p>
+<ol>
+<li>统一时间戳，如果还是设置的level则走老流程</li>
+<li>转换成wheel_time消息，将原本消息的topic，queueid存储为properties，将topic更换为timer_topic，返回</li>
+</ol>
+</li>
+<li><p>开启一个TimerEnqueueGetService线程，将timer_topic中的msg读取并构成TimerRequest，投递到enqueuePutQueue中</p>
+</li>
+<li><p>开启一个TimerEnqueuePutService线程，处理TimerRequest，将消息放入时间轮或直接进入dequeuePutQueue</p>
+</li>
+<li><p>时间轮enqueue逻辑（加入时间轮）</p>
+<ol>
+<li>处理滚动逻辑（这部分还没完全看懂），根据延迟时间定位到对应的slot，将消息顺序写入timerlog</li>
+<li>更新TimerWheel中的slot信息，将指向timerlog的指针对象，包括first_pos和last_pos以及delayed_time等写入。</li>
+</ol>
+</li>
+<li><p>时间轮dequeue逻辑（消费时间轮）</p>
+<ol>
+<li>开启TimerDequeueGetService，根据时间找到时间轮中的slot</li>
+<li>根据slot存储的指针，读取timerlog中所有的timerlog单位组装成TimerRequest，将其放入dequeueGetQueue</li>
+<li>开启TimerDequeueGetMessageService从commitlog中读取消息，写入TimerRequest，提交到dequeuePutQueue</li>
+<li>开启TimerDequeuePutMessageService将dequeuePutQueue的消息转换并投递到真实的topic</li>
+</ol>
+</li>
+</ol>
+<ul>
+<li><input disabled="" type="checkbox"> 定时&#x2F;延迟消息的HA机制</li>
+</ul>
+<hr>
+<h2 id="实现思路-整体流程图"><a href="#实现思路-整体流程图" class="headerlink" title="实现思路-整体流程图"></a>实现思路-整体流程图</h2><p><img src="https://p0-xtjj-private.juejin.cn/tos-cn-i-73owjymdk6/41c8c4f21b024e1fb9f46653c52adc55~tplv-73owjymdk6-jj-mark-v1:0:0:0:0:5o6Y6YeR5oqA5pyv56S-5Yy6IEAgcHI0eWVy:q75.awebp?policy=eyJ2bSI6MywidWlkIjoiMzEyMjI2ODc1NDQyNDE1MSJ9&rk3s=f64ab15b&x-orig-authkey=f32326d3454f2ac7e96d3d06cdbb035152127018&x-orig-expires=1739941967&x-orig-sign=5PHskcQsp++fpqpCnf1Y8cqE8Uk=" alt="image.png"></p>
+<h1 id="2-时间轮组件"><a href="#2-时间轮组件" class="headerlink" title="2.时间轮组件"></a>2.时间轮组件</h1><p>rocketmq的timewheel是通过两个本地文件组成的，其中一个是timeslot数组，另一个是数组里的真实数据。那么可不可以将数组直接存储在内存中呢？这样实现起来会简单一点，当然timeslot的重启recover也是要考虑到的。</p>
+<p>我自己实现的消息队列支持1h延迟即可，如果超过一天，采用定时任务或更完善的数据存储机制去实现会更可靠一点。1h的延迟消息所需的分层时间轮slot为60+60&#x3D;120，比起rocketmq最大支持14天的延迟消息来说，我的timeslot会少很多。总共占用的空间大概2，300byte，不是一个很大的数目，内存空间完全是ok的。</p>
+<p>这种方案，即在内存中分别记录secondsTimeWheel，minutesTimeWheel，hoursTimeWheel，启动scan任务进行扫描，每个timewheel[i]里都是一个timeslot，每个timeslot对应到timerlog文件，辅助读取。timerlog文件的读取，rocketmq实现的办法是在timerlog文件内部标识出prev的记录在哪，我也按照这种方式实现。</p>
+<h2 id="2-1TimerLog"><a href="#2-1TimerLog" class="headerlink" title="2.1TimerLog"></a>2.1TimerLog</h2><p>Timerlog文件中就是一个个的TimerLogUnit，TimerLogUnit如下</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">TimerLogUnit</span> &#123;</span><br><span class="line">	<span class="keyword">private</span> <span class="type">int</span> realSize;</span><br><span class="line">	<span class="keyword">private</span> <span class="type">int</span> realOffset;</span><br><span class="line">	<span class="keyword">private</span> <span class="type">int</span> delayedTime;</span><br><span class="line">	<span class="keyword">private</span> <span class="type">int</span> prevPos;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>prevPos可以辅助我们找到当前delayedTime的所有Unit，然后读取出来进行消费。</p>
+<p>TimerLog我设计为，前4byte记录当前写入的最大offset，后面就是TimerLogUnit[]数组，每个单位长度固定为16byte，如下</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">TimerLog</span> &#123;</span><br><span class="line">	<span class="keyword">private</span> File file;</span><br><span class="line">	<span class="keyword">private</span> MappedByteBuffer mappedByteBuffer;</span><br><span class="line">	<span class="keyword">private</span> ByteBuffer readBuffer;</span><br><span class="line">	<span class="keyword">private</span> ByteBuffer writeBuffer;</span><br><span class="line">	<span class="keyword">private</span> <span class="keyword">final</span> <span class="type">Object</span> <span class="variable">timerLogLock</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">Object</span>();</span><br><span class="line">	<span class="type">int</span> <span class="variable">mappedSize</span> <span class="operator">=</span> <span class="number">10</span> * <span class="number">1024</span> * <span class="number">1024</span>;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">loadFileInMMap</span><span class="params">()</span> <span class="keyword">throws</span> IOException &#123;</span><br><span class="line">		<span class="comment">//filePath = BrokerContext.getGlobalProperties().getMqHome() + &quot;/timer/timerlog&quot;;</span></span><br><span class="line">		file = <span class="keyword">new</span> <span class="title class_">File</span>(filePath);</span><br><span class="line">		<span class="keyword">if</span> (!file.exists()) &#123;</span><br><span class="line">			<span class="keyword">throw</span> <span class="keyword">new</span> <span class="title class_">RuntimeException</span>(<span class="string">&quot;Timer log file does not exist&quot;</span>);</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="type">FileChannel</span> <span class="variable">fileChannel</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">RandomAccessFile</span>(file, <span class="string">&quot;rw&quot;</span>).getChannel();</span><br><span class="line">		<span class="built_in">this</span>.mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_WRITE, <span class="number">0</span>, mappedSize);</span><br><span class="line">		<span class="built_in">this</span>.readBuffer = mappedByteBuffer.slice();</span><br><span class="line">		<span class="type">int</span> <span class="variable">maxOffset</span> <span class="operator">=</span> getMaxOffset();</span><br><span class="line">		<span class="built_in">this</span>.writeBuffer = mappedByteBuffer.slice();</span><br><span class="line">		writeBuffer.position(maxOffset);</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">public</span> TimerLogUnit <span class="title function_">readSlot</span><span class="params">(<span class="type">int</span> readOffset)</span> &#123;</span><br><span class="line">		<span class="type">ByteBuffer</span> <span class="variable">readBuf</span> <span class="operator">=</span> readBuffer.slice();</span><br><span class="line">		readBuf.position(readOffset);</span><br><span class="line">		<span class="type">TimerLogUnit</span> <span class="variable">slot</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">TimerLogUnit</span>();</span><br><span class="line">		slot.setRealSize(readBuf.getInt());</span><br><span class="line">		slot.setRealOffset(readBuf.getInt());</span><br><span class="line">		slot.setDelayedTime(readBuf.getInt());</span><br><span class="line">		slot.setPrevPos(readBuf.getInt());</span><br><span class="line">		<span class="keyword">return</span> slot;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">writeSlot</span><span class="params">(TimerLogUnit slot)</span> &#123;</span><br><span class="line">		<span class="keyword">synchronized</span> (timerLogLock) &#123;</span><br><span class="line">			<span class="type">int</span> <span class="variable">maxOffset</span> <span class="operator">=</span> <span class="built_in">this</span>.getMaxOffset();</span><br><span class="line">			writeBuffer.position(maxOffset);</span><br><span class="line">			writeBuffer.putInt(slot.getRealSize());</span><br><span class="line">			writeBuffer.putInt(slot.getRealOffset());</span><br><span class="line">			writeBuffer.putInt(slot.getDelayedTime());</span><br><span class="line">			writeBuffer.putInt(slot.getPrevPos());</span><br><span class="line">			maxOffset += <span class="number">16</span>;</span><br><span class="line">			writeMaxOffset(maxOffset);</span><br><span class="line">			writeBuffer.position(maxOffset);</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>对maxOffset的操作如下</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="type">int</span> <span class="title function_">getMaxOffset</span><span class="params">()</span> &#123;</span><br><span class="line">	<span class="type">ByteBuffer</span> <span class="variable">buf</span> <span class="operator">=</span> mappedByteBuffer.slice();</span><br><span class="line">	buf.position(<span class="number">0</span>);</span><br><span class="line">	<span class="type">int</span> <span class="variable">offset</span> <span class="operator">=</span> buf.getInt();</span><br><span class="line">	<span class="keyword">if</span>(offset == <span class="number">0</span>) &#123;</span><br><span class="line">		buf.position(<span class="number">0</span>);</span><br><span class="line">		buf.putInt(<span class="number">4</span>);</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> offset;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">private</span> <span class="keyword">void</span> <span class="title function_">writeMaxOffset</span><span class="params">(<span class="type">int</span> maxOffset)</span> &#123;</span><br><span class="line">	<span class="type">ByteBuffer</span> <span class="variable">buf</span> <span class="operator">=</span> mappedByteBuffer.slice();</span><br><span class="line">	buf.position(<span class="number">0</span>);</span><br><span class="line">	buf.putInt(maxOffset);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>同时还有按prevPos读取TimerLogUnit的函数，readList</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> TimerLogUnit[] readList(TimerWheelSlot timerWheelSlot) &#123;</span><br><span class="line">	<span class="type">int</span> <span class="variable">ptr</span> <span class="operator">=</span> timerWheelSlot.getLastPos();</span><br><span class="line">	<span class="type">int</span> <span class="variable">cnt</span> <span class="operator">=</span> <span class="number">0</span>;</span><br><span class="line">	TimerLogUnit[] timerLogUnits = <span class="keyword">new</span> <span class="title class_">TimerLogUnit</span>[timerWheelSlot.getMsgCount()];</span><br><span class="line">	<span class="keyword">while</span> (cnt &lt; timerWheelSlot.getMsgCount() &amp;&amp; ptr != -<span class="number">1</span>) &#123;</span><br><span class="line">		<span class="type">TimerLogUnit</span> <span class="variable">timerLogUnit</span> <span class="operator">=</span> readSlot(ptr);</span><br><span class="line">		ptr = timerLogUnit.getPrevPos();</span><br><span class="line">		timerLogUnits[cnt] = timerLogUnit;</span><br><span class="line">		cnt++;</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> timerLogUnits;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>目前使用的是mmap方式映射文件到内存，即写即刷盘，后面需要优化一下IO操作。</p>
+<h2 id="2-2TimerWheel"><a href="#2-2TimerWheel" class="headerlink" title="2.2TimerWheel"></a>2.2TimerWheel</h2><p>TimerWheel的设计很简单，wheel中包含当前的current slot idx和slotlist，以及计算给定delay需要放置的slot位置的函数</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">TimerWheel</span> &#123;</span><br><span class="line">	<span class="type">int</span> current;</span><br><span class="line">	TimerWheelSlot[] slotList;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">public</span> <span class="type">int</span> <span class="title function_">countNextSlot</span><span class="params">(<span class="type">int</span> delay)</span> &#123;</span><br><span class="line">		AssertUtil.isTrue(delay &lt; slotList.length, <span class="string">&quot;delay is over size&quot;</span>);</span><br><span class="line">		<span class="type">int</span> <span class="variable">remainSlotCount</span> <span class="operator">=</span> slotList.length - current;</span><br><span class="line">		<span class="type">int</span> <span class="variable">diff</span> <span class="operator">=</span> delay - remainSlotCount;</span><br><span class="line">		<span class="keyword">if</span> (diff &lt; <span class="number">0</span>) &#123;</span><br><span class="line">			<span class="keyword">return</span> current + delay;</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">return</span> diff;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>而TimerWheelSlot则记录当前delay下所有TimerLogUnit在TimerLog中的最大pos，最小pos，以及unit count。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">TimerWheelSlot</span> &#123;</span><br><span class="line">	<span class="keyword">private</span> <span class="type">int</span> <span class="variable">firstPos</span> <span class="operator">=</span> -<span class="number">1</span>;</span><br><span class="line">	<span class="keyword">private</span> <span class="type">int</span> <span class="variable">lastPos</span> <span class="operator">=</span> -<span class="number">1</span>;</span><br><span class="line">	<span class="keyword">private</span> <span class="type">int</span> <span class="variable">msgCount</span> <span class="operator">=</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>以及我们服务中管理TimerWheel的组件，TimerWheelManager。</p>
+<p>TimerWheelManager，我目前的设计是秒+分时间轮，最长延迟时间为3600秒，一方面是我的项目最开始就是以电商场景来写的，可能不需要过长的延迟消息，其次实现更多层级的timerwheel也比较复杂。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">TimerWheelManager</span> &#123;</span><br><span class="line">	<span class="keyword">private</span> <span class="keyword">final</span> <span class="type">Logger</span> <span class="variable">logger</span> <span class="operator">=</span> LoggerFactory.getLogger(TimerWheelManager.class);</span><br><span class="line">	<span class="comment">// 秒钟时间轮</span></span><br><span class="line">	<span class="keyword">private</span> TimerWheel secondsTimerWheel;</span><br><span class="line">	<span class="comment">// 分钟时间轮</span></span><br><span class="line">	<span class="keyword">private</span> TimerWheel minutesTimerWheel;</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 当前时间</span></span><br><span class="line">	<span class="keyword">private</span> <span class="type">long</span> <span class="variable">executeSeconds</span> <span class="operator">=</span> <span class="number">0L</span>;</span><br><span class="line"></span><br><span class="line">	<span class="comment">// lock，待优化</span></span><br><span class="line">	<span class="keyword">private</span> <span class="keyword">final</span> <span class="type">Object</span> <span class="variable">writeTimerLock</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">Object</span>();</span><br><span class="line">	<span class="comment">// 事件发布器</span></span><br><span class="line">	EventBus eventBus;</span><br><span class="line">	<span class="comment">// TimerLog文件</span></span><br><span class="line">	TimerLog timerLog;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">init</span><span class="params">(EventBus eventBus)</span> &#123;</span><br><span class="line">		secondsTimerWheel = <span class="keyword">new</span> <span class="title class_">TimerWheel</span>();</span><br><span class="line">		secondsTimerWheel.setCurrent(<span class="number">0</span>);</span><br><span class="line">		secondsTimerWheel.setSlotList(buildTimerSlot(<span class="number">60</span>));</span><br><span class="line">		minutesTimerWheel = <span class="keyword">new</span> <span class="title class_">TimerWheel</span>();</span><br><span class="line">		minutesTimerWheel.setCurrent(<span class="number">0</span>);</span><br><span class="line">		minutesTimerWheel.setSlotList(buildTimerSlot(<span class="number">60</span>));</span><br><span class="line">		timerLog = <span class="keyword">new</span> <span class="title class_">TimerLog</span>();</span><br><span class="line">		<span class="keyword">try</span> &#123;</span><br><span class="line">			timerLog.loadFileInMMap();</span><br><span class="line">		&#125; <span class="keyword">catch</span> (IOException e) &#123;</span><br><span class="line">			<span class="keyword">throw</span> <span class="keyword">new</span> <span class="title class_">RuntimeException</span>(e);</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="built_in">this</span>.eventBus = eventBus;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">private</span> TimerWheelSlot[] buildTimerSlot(<span class="type">int</span> count) &#123;</span><br><span class="line">		TimerWheelSlot[] slots = <span class="keyword">new</span> <span class="title class_">TimerWheelSlot</span>[count];</span><br><span class="line">		<span class="keyword">for</span> (<span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> <span class="number">0</span>; i &lt; count; i++) &#123;</span><br><span class="line">			slots[i] = <span class="keyword">new</span> <span class="title class_">TimerWheelSlot</span>();</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">return</span> slots;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">doScanWheel</span><span class="params">()</span> &#123;</span><br><span class="line">		<span class="type">Thread</span> <span class="variable">thread</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">Thread</span>(() -&gt; &#123;</span><br><span class="line">			<span class="keyword">while</span> (<span class="literal">true</span>) &#123;</span><br><span class="line">				<span class="keyword">try</span> &#123;</span><br><span class="line">					logger.info(<span class="string">&quot;current time is :&#123;&#125;&quot;</span>, executeSeconds);</span><br><span class="line">					doSecondsScan();</span><br><span class="line">					<span class="keyword">if</span> (executeSeconds % <span class="number">60</span> == <span class="number">0</span>) &#123;</span><br><span class="line">						doMinutesScan();</span><br><span class="line">					&#125;</span><br><span class="line">					TimeUnit.SECONDS.sleep(<span class="number">1</span>);</span><br><span class="line">					executeSeconds++;</span><br><span class="line">				&#125; <span class="keyword">catch</span> (InterruptedException e) &#123;</span><br><span class="line">					<span class="keyword">throw</span> <span class="keyword">new</span> <span class="title class_">RuntimeException</span>(e);</span><br><span class="line">				&#125;</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;);</span><br><span class="line">		thread.setName(<span class="string">&quot;scan-timer-wheel-task&quot;</span>);</span><br><span class="line">		thread.start();</span><br><span class="line">	&#125;</span><br><span class="line">	</span><br><span class="line">	<span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">add</span><span class="params">(TimerRequest request)</span> &#123;</span><br><span class="line">		</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">doMinutesScan</span><span class="params">()</span> &#123;</span><br><span class="line">		</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">doSecondsScan</span><span class="params">()</span> &#123;</span><br><span class="line">		</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>详细讲一下核心的三个方法，add，doMinutesScan，doSecondsScan</p>
+<p>首先是add方法</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">add</span><span class="params">(TimerRequest request)</span> &#123;</span><br><span class="line">	<span class="type">int</span> <span class="variable">delayTime</span> <span class="operator">=</span> request.getDelayTime();</span><br><span class="line"></span><br><span class="line">	<span class="type">TimerLogUnit</span> <span class="variable">timerLogUnit</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">TimerLogUnit</span>();</span><br><span class="line">	timerLogUnit.setDelayedTime(delayTime);</span><br><span class="line">	timerLogUnit.setRealOffset(request.getRealOffset());</span><br><span class="line">	timerLogUnit.setRealSize(request.getRealSize());</span><br><span class="line"></span><br><span class="line">	<span class="type">int</span> <span class="variable">min</span> <span class="operator">=</span> delayTime / <span class="number">60</span>;</span><br><span class="line">	<span class="keyword">if</span>(min == <span class="number">0</span>) &#123;</span><br><span class="line">		<span class="keyword">synchronized</span> (writeTimerLock) &#123;</span><br><span class="line">			<span class="type">int</span> <span class="variable">nextSlot</span> <span class="operator">=</span> secondsTimerWheel.countNextSlot(delayTime);</span><br><span class="line">			<span class="type">TimerWheelSlot</span> <span class="variable">timerWheelSlot</span> <span class="operator">=</span> secondsTimerWheel.getSlotList()[nextSlot];</span><br><span class="line">			<span class="type">int</span> <span class="variable">maxOffset</span> <span class="operator">=</span> timerLog.getMaxOffset();</span><br><span class="line">			<span class="keyword">if</span>(timerWheelSlot.getMsgCount() == <span class="number">0</span>) &#123;</span><br><span class="line">				timerLogUnit.setPrevPos(-<span class="number">1</span>);</span><br><span class="line">				timerWheelSlot.setFirstPos(maxOffset);</span><br><span class="line">				timerWheelSlot.setLastPos(maxOffset);</span><br><span class="line">			&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">				timerLogUnit.setPrevPos(timerWheelSlot.getLastPos());</span><br><span class="line">				timerWheelSlot.setLastPos(maxOffset);</span><br><span class="line">			&#125;</span><br><span class="line">			timerWheelSlot.setMsgCount(timerWheelSlot.getMsgCount() + <span class="number">1</span>);</span><br><span class="line">			timerLog.writeSlot(timerLogUnit);</span><br><span class="line">			secondsTimerWheel.getSlotList()[nextSlot] = timerWheelSlot;</span><br><span class="line">		&#125;</span><br><span class="line">	&#125; <span class="keyword">else</span> <span class="keyword">if</span>(min &gt; <span class="number">0</span>) &#123;</span><br><span class="line">		<span class="keyword">synchronized</span> (writeTimerLock) &#123;</span><br><span class="line">			<span class="type">int</span> <span class="variable">nextSlot</span> <span class="operator">=</span> minutesTimerWheel.countNextSlot(min);</span><br><span class="line">			<span class="type">TimerWheelSlot</span> <span class="variable">timerWheelSlot</span> <span class="operator">=</span> minutesTimerWheel.getSlotList()[nextSlot];</span><br><span class="line">			<span class="type">int</span> <span class="variable">maxOffset</span> <span class="operator">=</span> timerLog.getMaxOffset();</span><br><span class="line">			<span class="keyword">if</span>(timerWheelSlot.getMsgCount() == <span class="number">0</span>) &#123;</span><br><span class="line">				timerLogUnit.setPrevPos(-<span class="number">1</span>);</span><br><span class="line">				timerWheelSlot.setFirstPos(maxOffset);</span><br><span class="line">				timerWheelSlot.setLastPos(maxOffset);</span><br><span class="line">			&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">				timerLogUnit.setPrevPos(timerWheelSlot.getLastPos());</span><br><span class="line">				timerWheelSlot.setLastPos(maxOffset);</span><br><span class="line">			&#125;</span><br><span class="line">			timerWheelSlot.setMsgCount(timerWheelSlot.getMsgCount() + <span class="number">1</span>);</span><br><span class="line"></span><br><span class="line">			timerLog.writeSlot(timerLogUnit);</span><br><span class="line">			minutesTimerWheel.getSlotList()[nextSlot] = timerWheelSlot;</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>逻辑是，如果超过1分钟，则先放入分时间轮轮转，轮转出来后取模得出秒数，如果为0，则publish到对应的eventbus里执行逻辑，若不是，则放到秒时间轮中继续轮转。</p>
+<p>需要注意的是为timerlogUnit设置prev，需要根据当前delay的timewheel的slot里存放的lastpos。这样迭代，我们可以先获取maxOffset作为最新的pos，然后直接设置prevPos，再写入timerLog。</p>
+<p>然后是doMinutesScan和doSecondsScan，这里只放测试代码，后面还需要补上publish的操作。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">doMinutesScan</span><span class="params">()</span> &#123;</span><br><span class="line">	<span class="keyword">synchronized</span> (writeTimerLock) &#123;</span><br><span class="line">		<span class="type">int</span> <span class="variable">current</span> <span class="operator">=</span> minutesTimerWheel.getCurrent();</span><br><span class="line">		<span class="type">TimerWheelSlot</span> <span class="variable">minutesTimerWheelSlot</span> <span class="operator">=</span> minutesTimerWheel.getSlotList()[current];</span><br><span class="line">		TimerLogUnit[] timerLogUnits = timerLog.readList(minutesTimerWheelSlot);</span><br><span class="line">		<span class="keyword">for</span> (TimerLogUnit unit : timerLogUnits) &#123;</span><br><span class="line">			<span class="type">int</span> <span class="variable">remainSeconds</span> <span class="operator">=</span> unit.getDelayedTime() % <span class="number">60</span>;</span><br><span class="line">			<span class="keyword">if</span>(remainSeconds &gt; <span class="number">0</span>) &#123;</span><br><span class="line">				<span class="type">TimerRequest</span> <span class="variable">request</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">TimerRequest</span>();</span><br><span class="line">				request.setDelayTime(remainSeconds);</span><br><span class="line">				request.setRealOffset(unit.getRealOffset());</span><br><span class="line">				request.setRealSize(unit.getRealSize());</span><br><span class="line">				add(request);</span><br><span class="line">			&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">				<span class="comment">// todo publish event</span></span><br><span class="line">				logger.info(<span class="string">&quot;minutes wheel scan :&#123;&#125;&quot;</span>, unit);</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		<span class="comment">// 执行清空逻辑</span></span><br><span class="line">		minutesTimerWheel.getSlotList()[current] = <span class="keyword">new</span> <span class="title class_">TimerWheelSlot</span>();</span><br><span class="line">		<span class="keyword">if</span>(current == minutesTimerWheel.getSlotList().length - <span class="number">1</span>) &#123;</span><br><span class="line">			current = <span class="number">0</span>;</span><br><span class="line">		&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">			current = current + <span class="number">1</span>;</span><br><span class="line">		&#125;</span><br><span class="line">		minutesTimerWheel.setCurrent(current);</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">doSecondsScan</span><span class="params">()</span> &#123;</span><br><span class="line">	<span class="keyword">synchronized</span> (writeTimerLock) &#123;</span><br><span class="line">		<span class="type">int</span> <span class="variable">current</span> <span class="operator">=</span> secondsTimerWheel.getCurrent();</span><br><span class="line">		<span class="type">TimerWheelSlot</span> <span class="variable">secondsTimerWheelSlot</span> <span class="operator">=</span> secondsTimerWheel.getSlotList()[current];</span><br><span class="line">		TimerLogUnit[] timerLogUnits = timerLog.readList(secondsTimerWheelSlot);</span><br><span class="line">		<span class="keyword">for</span>(TimerLogUnit unit : timerLogUnits) &#123;</span><br><span class="line">			<span class="comment">// todo publish event</span></span><br><span class="line">			logger.info(<span class="string">&quot;seconds wheel scan :&#123;&#125;&quot;</span>, unit);</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="comment">// 执行完 清空</span></span><br><span class="line">		secondsTimerWheel.getSlotList()[current] = <span class="keyword">new</span> <span class="title class_">TimerWheelSlot</span>();</span><br><span class="line">		<span class="keyword">if</span>(current == secondsTimerWheel.getSlotList().length - <span class="number">1</span>) &#123;</span><br><span class="line">			current = <span class="number">0</span>;</span><br><span class="line">		&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">			current = current + <span class="number">1</span>;</span><br><span class="line">		&#125;</span><br><span class="line">		secondsTimerWheel.setCurrent(current);</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>分时间轮scan时需要注意，扫描出来后判断剩余delay，投放到秒时间轮，详细可以网上学一下分层时间轮算法。</p>
+<h2 id="2-3测试"><a href="#2-3测试" class="headerlink" title="2.3测试"></a>2.3测试</h2><p>测试代码</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title function_">main</span><span class="params">(String[] args)</span> &#123;</span><br><span class="line">	<span class="type">TimerWheelManager</span> <span class="variable">timerWheelManager</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">TimerWheelManager</span>();</span><br><span class="line">	timerWheelManager.init(<span class="literal">null</span>);</span><br><span class="line">	timerWheelManager.doScanWheel();</span><br><span class="line">	<span class="type">TimerRequest</span> <span class="variable">tr1</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">TimerRequest</span>();</span><br><span class="line">	tr1.setDelayTime(<span class="number">62</span>);</span><br><span class="line">	tr1.setRealOffset(<span class="number">1</span>);</span><br><span class="line">	tr1.setRealSize(<span class="number">1</span>);</span><br><span class="line">	timerWheelManager.add(tr1);</span><br><span class="line"></span><br><span class="line">	<span class="type">TimerRequest</span> <span class="variable">tr2</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">TimerRequest</span>();</span><br><span class="line">	tr2.setDelayTime(<span class="number">75</span>);</span><br><span class="line">	tr2.setRealOffset(<span class="number">1</span>);</span><br><span class="line">	tr2.setRealSize(<span class="number">1</span>);</span><br><span class="line">	timerWheelManager.add(tr2);</span><br><span class="line"></span><br><span class="line">	<span class="type">TimerRequest</span> <span class="variable">tr3</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">TimerRequest</span>();</span><br><span class="line">	tr3.setDelayTime(<span class="number">75</span>);</span><br><span class="line">	tr3.setRealOffset(<span class="number">2</span>);</span><br><span class="line">	tr3.setRealSize(<span class="number">2</span>);</span><br><span class="line"></span><br><span class="line">	<span class="type">TimerRequest</span> <span class="variable">tr4</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">TimerRequest</span>();</span><br><span class="line">	tr4.setDelayTime(<span class="number">15</span>);</span><br><span class="line">	tr4.setRealOffset(<span class="number">3</span>);</span><br><span class="line">	tr4.setRealSize(<span class="number">3</span>);</span><br><span class="line">	timerWheelManager.add(tr3);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>测试结果</p>
+<pre><code>[scan-timer-wheel-task] INFO com.prayer.broker.timerwheel.TimerWheelManager - current time is :14
+[scan-timer-wheel-task] INFO com.prayer.broker.timerwheel.TimerWheelManager - current time is :15
+[scan-timer-wheel-task] INFO com.prayer.broker.timerwheel.TimerWheelManager - current time is :16
+[scan-timer-wheel-task] INFO com.prayer.broker.timerwheel.TimerWheelManager - seconds wheel scan :TimerLogUnit(realSize=4, realOffset=4, delayedTime=15, prevPos=575)
+[scan-timer-wheel-task] INFO com.prayer.broker.timerwheel.TimerWheelManager - seconds wheel scan :TimerLogUnit(realSize=3, realOffset=3, delayedTime=15, prevPos=-1)
+[scan-timer-wheel-task] INFO com.prayer.broker.timerwheel.TimerWheelManager - current time is :17
+[scan-timer-wheel-task] INFO com.prayer.broker.timerwheel.TimerWheelManager - current time is :18
+[scan-timer-wheel-task] INFO com.prayer.broker.timerwheel.TimerWheelManager - current time is :74
+[scan-timer-wheel-task] INFO com.prayer.broker.timerwheel.TimerWheelManager - current time is :75
+[scan-timer-wheel-task] INFO com.prayer.broker.timerwheel.TimerWheelManager - current time is :76
+[scan-timer-wheel-task] INFO com.prayer.broker.timerwheel.TimerWheelManager - seconds wheel scan :TimerLogUnit(realSize=1, realOffset=1, delayedTime=15, prevPos=607)
+[scan-timer-wheel-task] INFO com.prayer.broker.timerwheel.TimerWheelManager - seconds wheel scan :TimerLogUnit(realSize=2, realOffset=2, delayedTime=15, prevPos=-1)
+[scan-timer-wheel-task] INFO com.prayer.broker.timerwheel.TimerWheelManager - current time is :77
+[scan-timer-wheel-task] INFO com.prayer.broker.timerwheel.TimerWheelManager - current time is :78
+</code></pre>
+<p><img src="https://p0-xtjj-private.juejin.cn/tos-cn-i-73owjymdk6/fa72b806efda416ebda5687349e57e17~tplv-73owjymdk6-jj-mark-v1:0:0:0:0:5o6Y6YeR5oqA5pyv56S-5Yy6IEAgcHI0eWVy:q75.awebp?policy=eyJ2bSI6MywidWlkIjoiMzEyMjI2ODc1NDQyNDE1MSJ9&rk3s=f64ab15b&x-orig-authkey=f32326d3454f2ac7e96d3d06cdbb035152127018&x-orig-expires=1739941967&x-orig-sign=PgvgzklzHFy60AZLZ7vWTGm1aC0=" alt="image.png"></p>
+<h1 id="3-延迟消息的实现"><a href="#3-延迟消息的实现" class="headerlink" title="3.延迟消息的实现"></a>3.延迟消息的实现</h1><p>前面实现过了基于文件的timerwheel组件，接下来就是完善延迟消息的流程。大致思路为：在消息接收时判断是否为延迟消息，进入延迟消息处理流程，将延迟消息包装并发送到timer_topic中，同时构建一份TimerRequest，将TimerRequest投递到时间轮组件等待到期。当TimerRequest到期时，我们会从timerLog里取出之前包装的msg的offset和size帮助在timer_topic中寻找msg，拿出msg后直接投递到原本的topic下。</p>
+<h2 id="3-1延迟消息handler"><a href="#3-1延迟消息handler" class="headerlink" title="3.1延迟消息handler"></a>3.1延迟消息handler</h2><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">PushMsgListener</span> <span class="keyword">implements</span> <span class="title class_">Listener</span>&lt;PushMsgEvent&gt; &#123;</span><br><span class="line">	<span class="meta">@Override</span></span><br><span class="line">	<span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">onReceive</span><span class="params">(PushMsgEvent event)</span> <span class="keyword">throws</span> Exception &#123;</span><br><span class="line">		<span class="type">MessageDTO</span> <span class="variable">msg</span> <span class="operator">=</span> event.getMessageDTO();</span><br><span class="line">		<span class="type">boolean</span> <span class="variable">isDelayMsg</span> <span class="operator">=</span> msg.getDelay() &gt; <span class="number">0</span>;</span><br><span class="line">		<span class="keyword">if</span> (isDelayMsg) &#123;</span><br><span class="line">			appendDelayMessageV2(msg, event);</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">	</span><br><span class="line">	<span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">appendDelayMessageV2</span><span class="params">(MessageDTO msg, PushMsgEvent event)</span> <span class="keyword">throws</span> IOException &#123;</span><br><span class="line">		<span class="type">String</span> <span class="variable">waitToPushTopic</span> <span class="operator">=</span> <span class="string">&quot;timer_topic&quot;</span>;</span><br><span class="line">		AssertUtil.isTrue(msg.getDelay() &lt;= <span class="number">3600</span>, <span class="string">&quot;to large delay time&quot;</span>);</span><br><span class="line">		<span class="type">MessageDTO</span> <span class="variable">delayMessage</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">MessageDTO</span>();</span><br><span class="line">		delayMessage.setBody(JSON.toJSONBytes(msg));</span><br><span class="line">		delayMessage.setTopic(waitToPushTopic);</span><br><span class="line">		delayMessage.setQueueId(<span class="number">0</span>);</span><br><span class="line">		delayMessage.setSendWay(MsgSendWay.async.getValue());</span><br><span class="line">		<span class="type">int</span>[] re = BrokerContext.getCommitLogMMapFileModelManager().get(waitToPushTopic).writeTimerContent(delayMessage, <span class="literal">true</span>);</span><br><span class="line">		<span class="type">int</span> <span class="variable">realOffset</span> <span class="operator">=</span> re[<span class="number">0</span>];</span><br><span class="line">		<span class="type">int</span> <span class="variable">realSize</span> <span class="operator">=</span> re[<span class="number">1</span>];</span><br><span class="line">		<span class="type">TimerRequest</span> <span class="variable">timerRequest</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">TimerRequest</span>();</span><br><span class="line">		timerRequest.setRealSize(realSize);</span><br><span class="line">		timerRequest.setRealOffset(realOffset);</span><br><span class="line">		timerRequest.setDelayTime(msg.getDelay());</span><br><span class="line">		BrokerContext.getTimerWheelManager().add(timerRequest);</span><br><span class="line"></span><br><span class="line">		<span class="comment">// 给client返回数据, 不用看</span></span><br><span class="line">		sendResp();</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line">	</span><br></pre></td></tr></table></figure>
+
+<h2 id="3-2-数据结构"><a href="#3-2-数据结构" class="headerlink" title="3.2 数据结构"></a>3.2 数据结构</h2><p>appendDelayMessage的重点有二，一将消息投递至timer_topic队列，二是获取投递完的offset和size，不过这部分其实都是mq的mmap组件做的，不是本文的重点，因此不过多赘述。</p>
+<p>获取到offset和size后便能构建TimerRequest，投递到时间轮中，时间轮在我上一篇文章有源码展示，其中有个eventBus，用于publish需要处理的数据，数据结构也很简单</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">TimerLogEvent</span> <span class="variable">event</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">TimerLogEvent</span>();</span><br><span class="line">event.setTimerLogUnitList(timerLogUnitList);</span><br><span class="line">eventBus.publish(event);</span><br><span class="line"></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">TimerLogEvent</span> <span class="keyword">extends</span> <span class="title class_">Event</span> &#123;</span><br><span class="line">	<span class="keyword">private</span> List&lt;TimerLogUnit&gt; timerLogUnitList;</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">TimerLogUnit</span> &#123;</span><br><span class="line">	<span class="keyword">private</span> <span class="type">int</span> realSize;</span><br><span class="line">	<span class="keyword">private</span> <span class="type">int</span> realOffset;</span><br><span class="line">	<span class="keyword">private</span> <span class="type">int</span> delayedTime;</span><br><span class="line">	<span class="keyword">private</span> <span class="type">int</span> prevPos;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="3-3-延迟消息的恢复"><a href="#3-3-延迟消息的恢复" class="headerlink" title="3.3 延迟消息的恢复"></a>3.3 延迟消息的恢复</h2><p>进入到TimerLog的Listener之后，处理也很简单，找到timer_topic的mmapfile，取出之前存放的包装msg，然后将msg投放到origin的topic下。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">TimerLogListener</span> <span class="keyword">implements</span> <span class="title class_">Listener</span>&lt;TimerLogEvent&gt; &#123;</span><br><span class="line">	<span class="keyword">private</span> <span class="keyword">final</span> <span class="type">Logger</span> <span class="variable">logger</span> <span class="operator">=</span> LoggerFactory.getLogger(<span class="built_in">this</span>.getClass());</span><br><span class="line">	<span class="meta">@Override</span></span><br><span class="line">	<span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">onReceive</span><span class="params">(TimerLogEvent event)</span> <span class="keyword">throws</span> Exception &#123;</span><br><span class="line">		List&lt;TimerLogUnit&gt; timerLogUnitList = event.getTimerLogUnitList();</span><br><span class="line">		<span class="keyword">for</span> (TimerLogUnit timerLogUnit : timerLogUnitList) &#123;</span><br><span class="line">			<span class="type">int</span> <span class="variable">realOffset</span> <span class="operator">=</span> timerLogUnit.getRealOffset();</span><br><span class="line">			<span class="type">int</span> <span class="variable">realSize</span> <span class="operator">=</span> timerLogUnit.getRealSize();</span><br><span class="line">			<span class="type">CommitLogMMapFileModel</span> <span class="variable">commitLogMMapFileModel</span> <span class="operator">=</span> BrokerContext.getCommitLogMMapFileModelManager().get(<span class="string">&quot;timer_topic&quot;</span>);</span><br><span class="line">			<span class="type">ConsumeMsgCommitLogDTO</span> <span class="variable">consumeMsgCommitLogDTO</span> <span class="operator">=</span> commitLogMMapFileModel.readContent(realOffset, realSize);</span><br><span class="line">			<span class="type">byte</span>[] body = consumeMsgCommitLogDTO.getBody();</span><br><span class="line">			<span class="type">MessageDTO</span> <span class="variable">originMessage</span> <span class="operator">=</span> JSON.parseObject(body, MessageDTO.class);</span><br><span class="line">			logger.info(<span class="string">&quot;TimerLog msg=&#123;&#125;&quot;</span>, JSON.toJSONString(originMessage));</span><br><span class="line">			BrokerContext.getCommitLogAppendHandler().appendMsg(originMessage);</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="3-4测试"><a href="#3-4测试" class="headerlink" title="3.4测试"></a>3.4测试</h2><p>测试代码</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@Test</span> Producer</span><br><span class="line"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">sendUserEnterMsg</span><span class="params">()</span> <span class="keyword">throws</span> InterruptedException &#123;</span><br><span class="line">	<span class="keyword">for</span> (<span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> <span class="number">80</span>; i &lt; <span class="number">90</span>; i++) &#123;</span><br><span class="line">		<span class="keyword">try</span> &#123;</span><br><span class="line">			<span class="type">MessageDTO</span> <span class="variable">messageDTO</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">MessageDTO</span>();</span><br><span class="line">			messageDTO.setTopic(<span class="string">&quot;order_cancel_topic&quot;</span>);</span><br><span class="line">			<span class="type">JSONObject</span> <span class="variable">jsonObject</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">JSONObject</span>();</span><br><span class="line">			jsonObject.put(<span class="string">&quot;orderId&quot;</span>,i);</span><br><span class="line">			jsonObject.put(<span class="string">&quot;level&quot;</span>,<span class="number">1</span>);</span><br><span class="line">			jsonObject.put(<span class="string">&quot;cancelTime&quot;</span>,System.currentTimeMillis());</span><br><span class="line">			messageDTO.setBody(jsonObject.toJSONString().getBytes());</span><br><span class="line">			messageDTO.setDelay(<span class="number">5</span>);</span><br><span class="line">			<span class="type">SendResult</span> <span class="variable">sendResult</span> <span class="operator">=</span> producer.send(messageDTO);</span><br><span class="line">			System.out.println(JSON.toJSONString(sendResult));</span><br><span class="line">		&#125;<span class="keyword">catch</span> (Exception e) &#123;</span><br><span class="line">			e.printStackTrace();</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="meta">@Test</span> Consumer</span><br><span class="line"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">testConsumeMsg</span><span class="params">()</span> <span class="keyword">throws</span> InterruptedException&#123;</span><br><span class="line">	consumer = <span class="keyword">new</span> <span class="title class_">DefaultConsumer</span>();</span><br><span class="line">	consumer.setNsIp(<span class="string">&quot;127.0.0.1&quot;</span>);</span><br><span class="line">	consumer.setNsPort(<span class="number">9090</span>);</span><br><span class="line">	consumer.setTopic(<span class="string">&quot;order_cancel_topic&quot;</span>);</span><br><span class="line">	consumer.setConsumeGroup(<span class="string">&quot;test-order_cancel_topic-group&quot;</span>);</span><br><span class="line">	consumer.setBrokerClusterGroup(<span class="string">&quot;test-group&quot;</span>);</span><br><span class="line">	consumer.setBatchSize(<span class="number">1</span>);</span><br><span class="line">	consumer.setMessageConsumeListener(<span class="keyword">new</span> <span class="title class_">MessageConsumeListener</span>() &#123;</span><br><span class="line">		<span class="meta">@Override</span></span><br><span class="line">		<span class="keyword">public</span> ConsumeResult <span class="title function_">consume</span><span class="params">(List&lt;ConsumeMessage&gt; consumeMessageList)</span> &#123;</span><br><span class="line">			<span class="keyword">for</span>(ConsumeMessage consumeMessage : consumeMessageList)&#123;</span><br><span class="line">				System.out.println(System.currentTimeMillis() + <span class="string">&quot; &quot;</span> + <span class="keyword">new</span> <span class="title class_">String</span>(consumeMessage.getConsumeMsgCommitLogDTO().getBody()));</span><br><span class="line">			&#125;</span><br><span class="line">			<span class="keyword">return</span> ConsumeResult.consume_success();</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;);</span><br><span class="line">	consumer.start();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>启动nameserver，broker-master，broker-slave，consumer</p>
+<p>消费结果如下：</p>
+<p><img src="https://p0-xtjj-private.juejin.cn/tos-cn-i-73owjymdk6/66407211416b46b6afa2008d12970b33~tplv-73owjymdk6-jj-mark-v1:0:0:0:0:5o6Y6YeR5oqA5pyv56S-5Yy6IEAgcHI0eWVy:q75.awebp?policy=eyJ2bSI6MywidWlkIjoiMzEyMjI2ODc1NDQyNDE1MSJ9&rk3s=f64ab15b&x-orig-authkey=f32326d3454f2ac7e96d3d06cdbb035152127018&x-orig-expires=1739941967&x-orig-sign=+yjacl67OsPxlxlWi1Bkc6KRj5A=" alt="image.png"><br>5s数据</p>
+<pre><code>1739164707790 &#123;&quot;orderId&quot;:86,&quot;level&quot;:1,&quot;cancelTime&quot;:1739164701453&#125;
+[consume_msg_task] INFO com.prayer.client.consumer.DefaultConsumer - 消费成功, topic=order_cancel_topic
+1739164707811 &#123;&quot;orderId&quot;:89,&quot;level&quot;:1,&quot;cancelTime&quot;:1739164701459&#125;
+[consume_msg_task] INFO com.prayer.client.consumer.DefaultConsumer - 消费成功, topic=order_cancel_topic
+1739164707812 &#123;&quot;orderId&quot;:82,&quot;level&quot;:1,&quot;cancelTime&quot;:1739164701445&#125;
+[consume_msg_task] INFO com.prayer.client.consumer.DefaultConsumer - 消费成功, topic=order_cancel_topic
+1739164707926 &#123;&quot;orderId&quot;:85,&quot;level&quot;:1,&quot;cancelTime&quot;:1739164701451&#125;
+[consume_msg_task] INFO com.prayer.client.consumer.DefaultConsumer - 消费成功, topic=order_cancel_topic
+1739164707927 &#123;&quot;orderId&quot;:88,&quot;level&quot;:1,&quot;cancelTime&quot;:1739164701457&#125;
+[consume_msg_task] INFO com.prayer.client.consumer.DefaultConsumer - 消费成功, topic=order_cancel_topic
+1739164708036 &#123;&quot;orderId&quot;:84,&quot;level&quot;:1,&quot;cancelTime&quot;:1739164701449&#125;
+[consume_msg_task] INFO com.prayer.client.consumer.DefaultConsumer - 消费成功, topic=order_cancel_topic
+1739164708037 &#123;&quot;orderId&quot;:87,&quot;level&quot;:1,&quot;cancelTime&quot;:1739164701455&#125;
+[consume_msg_task] INFO com.prayer.client.consumer.DefaultConsumer - 消费成功, topic=order_cancel_topic
+1739164708146 &#123;&quot;orderId&quot;:81,&quot;level&quot;:1,&quot;cancelTime&quot;:1739164701443&#125;
+[consume_msg_task] INFO com.prayer.client.consumer.DefaultConsumer - 消费成功, topic=order_cancel_topic
+1739164708147 &#123;&quot;orderId&quot;:83,&quot;level&quot;:1,&quot;cancelTime&quot;:1739164701447&#125;
+[consume_msg_task] INFO com.prayer.client.consumer.DefaultConsumer - 消费成功, topic=order_cancel_topic
+1739164708256 &#123;&quot;orderId&quot;:80,&quot;level&quot;:1,&quot;cancelTime&quot;:1739164701382&#125;
+[consume_msg_task] INFO com.prayer.client.consumer.DefaultConsumer - 消费成功, topic=order_cancel_topic
+</code></pre>
+<p>前面的是消费的currentTimeStamp，消息体中的是发送时的currentTimerStamp，延迟差不多是5s这样。至此就初步实现了一套延迟消息机制。</p>
+<hr>
+<h1 id="4-todo"><a href="#4-todo" class="headerlink" title="4.todo"></a>4.todo</h1><ul>
+<li><input disabled="" type="checkbox"> timerlog文件可能会被写满，需要进行轮转，轮转逻辑的设计</li>
+<li><input disabled="" type="checkbox"> timerslot掉电恢复</li>
+<li><input disabled="" type="checkbox"> timerlog的IO操作优化</li>
+</ul>
+
+      </div>
+      
+        <div class="prev-or-next">
+          <div class="post-foot-next">
+            
+              <a href="/2025/02/11/git%E8%BF%9E%E6%8E%A5%E9%97%AE%E9%A2%98%E8%AE%B0%E5%BD%95/" target="_self">
+                <i class="iconfont icon-chevronleft"></i>
+                <span>上一页</span>
+              </a>
+            
+          </div>
+          <div class="post-attach">
+            <span class="post-pubtime">
+              <i class="iconfont icon-updatetime mr-10" title="更新时间"></i>
+              2025-02-22 18:17:40
+            </span>
+            
+                  <span class="post-tags">
+                    <i class="iconfont icon-tags mr-10" title="标签"></i>
+                    
+                    <span class="span--tag mr-8">
+                      <a href="/tags/rocketmq/" title="rocketmq">
+                        #rocketmq
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+          </div>
+          <div class="post-foot-prev">
+            
+              <a href="/2025/02/22/rocketmq%E7%9A%84%E5%8D%95commitlog%E5%86%99%E5%85%A5%E6%97%B6%E9%94%81%E4%BA%89%E6%8A%A2%E4%BC%9A%E4%B8%8D%E4%BC%9A%E6%88%90%E4%B8%BA%E6%80%A7%E8%83%BD%E7%93%B6%E9%A2%88%EF%BC%9F/" target="_self">
+                <span>下一页</span>
+                <i class="iconfont icon-chevronright"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+    </div>
+    
+  <div id="btn-catalog" class="btn-catalog">
+    <i class="iconfont icon-catalog"></i>
+  </div>
+  <div class="post-catalog hidden" id="catalog">
+    <div class="title">目录</div>
+    <div class="catalog-content">
+      
+        <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#0-%E5%BC%95%E8%A8%80"><span class="toc-text">0.引言</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#1-rocketmq5-x%E4%B8%AD%E6%97%B6%E9%97%B4%E8%BD%AE%E7%9A%84%E5%AE%9E%E7%8E%B0%E6%96%B9%E5%BC%8F"><span class="toc-text">1.rocketmq5.x中时间轮的实现方式</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#1-1%E6%96%87%E4%BB%B6%E9%83%A8%E5%88%86"><span class="toc-text">1.1文件部分</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#timerwheel"><span class="toc-text">timerwheel</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#timerlog"><span class="toc-text">timerlog</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#1-2%E6%95%B4%E4%BD%93%E6%B5%81%E7%A8%8B"><span class="toc-text">1.2整体流程</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%AE%9E%E7%8E%B0%E6%80%9D%E8%B7%AF-%E6%95%B4%E4%BD%93%E6%B5%81%E7%A8%8B%E5%9B%BE"><span class="toc-text">实现思路-整体流程图</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#2-%E6%97%B6%E9%97%B4%E8%BD%AE%E7%BB%84%E4%BB%B6"><span class="toc-text">2.时间轮组件</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#2-1TimerLog"><span class="toc-text">2.1TimerLog</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#2-2TimerWheel"><span class="toc-text">2.2TimerWheel</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#2-3%E6%B5%8B%E8%AF%95"><span class="toc-text">2.3测试</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#3-%E5%BB%B6%E8%BF%9F%E6%B6%88%E6%81%AF%E7%9A%84%E5%AE%9E%E7%8E%B0"><span class="toc-text">3.延迟消息的实现</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#3-1%E5%BB%B6%E8%BF%9F%E6%B6%88%E6%81%AFhandler"><span class="toc-text">3.1延迟消息handler</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#3-2-%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84"><span class="toc-text">3.2 数据结构</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#3-3-%E5%BB%B6%E8%BF%9F%E6%B6%88%E6%81%AF%E7%9A%84%E6%81%A2%E5%A4%8D"><span class="toc-text">3.3 延迟消息的恢复</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#3-4%E6%B5%8B%E8%AF%95"><span class="toc-text">3.4测试</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#4-todo"><span class="toc-text">4.todo</span></a></li></ol>
+      
+    </div>
+  </div>
+
+  
+<script src="/js/catalog.js"></script>
+
+
+
+
+    
+      <div class="comments-container">
+        
+
+
+
+
+
+
+
+      </div>
+    
+  </div>
+
+
+        
+<div class="footer">
+  <div class="social">
+    <ul>
+      
+        <li>
+          
+              <a title="github" target="_blank" rel="noopener" href="https://github.com/JhoniWu">
+                <i class="iconfont icon-github"></i>
+              </a>
+              
+        </li>
+        
+    </ul>
+  </div>
+  
+    
+    <div class="footer-more">
+      
+        <a target="_blank" rel="noopener" href="https://github.com/zchengsite/hexo-theme-oranges">Copyright © 2025 Oranges</a>
+        
+    </div>
+  
+    
+    <div class="footer-more">
+      
+        <a target="_blank" rel="noopener" href="https://github.com/zchengsite/hexo-theme-oranges">Theme by Oranges | Powered by Hexo</a>
+        
+    </div>
+  
+  
+    <div class="footer-views">
+      
+          本站总访问量<span id="busuanzi_value_site_pv"></span>次
+        
+      
+          本文总阅读量<span id="busuanzi_value_page_pv"></span>次
+        
+      
+          本站访客数<span id="busuanzi_value_site_uv"></span>人
+        
+      
+    </div>
+  
+</div>
+
+      </div>
+
+      <div class="tools-bar">
+        <div class="back-to-top tools-bar-item hidden">
+  <a href="javascript: void(0)">
+    <i class="iconfont icon-chevronup"></i>
+  </a>
+</div>
+
+
+<script src="/js/backtotop.js"></script>
+
+
+
+        
+  <div class="search-icon tools-bar-item" id="search-icon">
+    <a href="javascript: void(0)">
+      <i class="iconfont icon-search"></i>
+    </a>
+  </div>
+
+  <div class="search-overlay hidden">
+    <div class="search-content" tabindex="0">
+      <div class="search-title">
+        <span class="search-icon-input">
+          <a href="javascript: void(0)">
+            <i class="iconfont icon-search"></i>
+          </a>
+        </span>
+        
+          <input type="text" class="search-input" id="search-input" placeholder="搜索...">
+        
+        <span class="search-close-icon" id="search-close-icon">
+          <a href="javascript: void(0)">
+            <i class="iconfont icon-close"></i>
+          </a>
+        </span>
+      </div>
+      <div class="search-result" id="search-result"></div>
+    </div>
+  </div>
+
+  <script type="text/javascript">
+    var inputArea = document.querySelector("#search-input")
+    var searchOverlayArea = document.querySelector(".search-overlay")
+
+    inputArea.onclick = function() {
+      getSearchFile()
+      this.onclick = null
+    }
+
+    inputArea.onkeydown = function() {
+      if(event.keyCode == 13)
+        return false
+    }
+
+    function openOrHideSearchContent() {
+      let isHidden = searchOverlayArea.classList.contains('hidden')
+      if (isHidden) {
+        searchOverlayArea.classList.remove('hidden')
+        document.body.classList.add('hidden')
+        // inputArea.focus()
+      } else {
+        searchOverlayArea.classList.add('hidden')
+        document.body.classList.remove('hidden')
+      }
+    }
+
+    function blurSearchContent(e) {
+      if (e.target === searchOverlayArea) {
+        openOrHideSearchContent()
+      }
+    }
+
+    document.querySelector("#search-icon").addEventListener("click", openOrHideSearchContent, false)
+    document.querySelector("#search-close-icon").addEventListener("click", openOrHideSearchContent, false)
+    searchOverlayArea.addEventListener("click", blurSearchContent, false)
+
+    var searchFunc = function (path, search_id, content_id) {
+      'use strict';
+      var $input = document.getElementById(search_id);
+      var $resultContent = document.getElementById(content_id);
+      $resultContent.innerHTML = "<ul><span class='local-search-empty'>首次搜索，正在载入索引文件，请稍后……<span></ul>";
+      $.ajax({
+        // 0x01. load xml file
+        url: path,
+        dataType: "xml",
+        success: function (xmlResponse) {
+          // 0x02. parse xml file
+          var datas = $("entry", xmlResponse).map(function () {
+            return {
+              title: $("title", this).text(),
+              content: $("content", this).text(),
+              url: $("url", this).text()
+            };
+          }).get();
+          $resultContent.innerHTML = "";
+
+          $input.addEventListener('input', function () {
+            // 0x03. parse query to keywords list
+            var str = '<ul class=\"search-result-list\">';
+            var keywords = this.value.trim().toLowerCase().split(/[\s\-]+/);
+            $resultContent.innerHTML = "";
+            if (this.value.trim().length <= 0) {
+              return;
+            }
+            // 0x04. perform local searching
+            datas.forEach(function (data) {
+              var isMatch = true;
+              var content_index = [];
+              if (!data.title || data.title.trim() === '') {
+                data.title = "Untitled";
+              }
+              var orig_data_title = data.title.trim();
+              var data_title = orig_data_title.toLowerCase();
+              var orig_data_content = data.content.trim().replace(/<[^>]+>/g, "");
+              var data_content = orig_data_content.toLowerCase();
+              var data_url = data.url;
+              var index_title = -1;
+              var index_content = -1;
+              var first_occur = -1;
+              // only match artiles with not empty contents
+              if (data_content !== '') {
+                keywords.forEach(function (keyword, i) {
+                  index_title = data_title.indexOf(keyword);
+                  index_content = data_content.indexOf(keyword);
+
+                  if (index_title < 0 && index_content < 0) {
+                    isMatch = false;
+                  } else {
+                    if (index_content < 0) {
+                      index_content = 0;
+                    }
+                    if (i == 0) {
+                      first_occur = index_content;
+                    }
+                    // content_index.push({index_content:index_content, keyword_len:keyword_len});
+                  }
+                });
+              } else {
+                isMatch = false;
+              }
+              // 0x05. show search results
+              if (isMatch) {
+                str += "<li><a href='" + data_url + "' class='search-result-title'>" + orig_data_title + "</a>";
+                var content = orig_data_content;
+                if (first_occur >= 0) {
+                  // cut out 100 characters
+                  var start = first_occur - 20;
+                  var end = first_occur + 80;
+
+                  if (start < 0) {
+                    start = 0;
+                  }
+
+                  if (start == 0) {
+                    end = 100;
+                  }
+
+                  if (end > content.length) {
+                    end = content.length;
+                  }
+
+                  var match_content = content.substr(start, end);
+
+                  // highlight all keywords
+                  keywords.forEach(function (keyword) {
+                    var regS = new RegExp(keyword, "gi");
+                    match_content = match_content.replace(regS, "<span class=\"search-keyword\">" + keyword + "</span>");
+                  });
+
+                  str += "<p class=\"search-result-abstract\">" + match_content + "...</p>"
+                }
+                str += "</li>";
+              }
+            });
+            str += "</ul>";
+            if (str.indexOf('<li>') === -1) {
+              return $resultContent.innerHTML = "<ul><span class='local-search-empty'>没有找到内容，请尝试更换检索词。<span></ul>";
+            }
+            $resultContent.innerHTML = str;
+          });
+        },
+        error: function(xhr, status, error) {
+          $resultContent.innerHTML = ""
+          if (xhr.status === 404) {
+            $resultContent.innerHTML = "<ul><span class='local-search-empty'>未找到search.xml文件，具体请参考：<a href='https://github.com/zchengsite/hexo-theme-oranges#configuration' target='_black'>configuration</a><span></ul>";
+          } else {
+            $resultContent.innerHTML = "<ul><span class='local-search-empty'>请求失败，尝试重新刷新页面或稍后重试。<span></ul>";
+          }
+        }
+      });
+      $(document).on('click', '#search-close-icon', function() {
+        $('#search-input').val('');
+        $('#search-result').html('');
+      });
+    }
+
+    var getSearchFile = function() {
+        var path = "/search.xml";
+        searchFunc(path, 'search-input', 'search-result');
+    }
+  </script>
+
+
+
+
+        
+  <div class="tools-bar-item theme-icon" id="switch-color-scheme">
+    <a href="javascript: void(0)">
+      <i id="theme-icon" class="iconfont icon-moon"></i>
+    </a>
+  </div>
+
+  
+<script src="/js/colorscheme.js"></script>
+
+
+
+
+
+        
+  
+    <div class="share-icon tools-bar-item">
+      <a href="javascript: void(0)" id="share-icon">
+        <i class="iconfont iconshare"></i>
+      </a>
+      <div class="share-content hidden">
+        
+          <a class="share-item" href="https://twitter.com/intent/tweet?text=' + %E5%BB%B6%E8%BF%9F%E6%B6%88%E6%81%AF%E6%BA%90%E7%A0%81%E4%B8%8E%E6%89%8B%E5%8A%A8%E5%AE%9E%E7%8E%B0 + '&url=' + https%3A%2F%2Fjhoniwu.github.io%2F2025%2F02%2F12%2F%25E5%25BB%25B6%25E8%25BF%259F%25E6%25B6%2588%25E6%2581%25AF%25E6%25BA%2590%25E7%25A0%2581%25E4%25B8%258E%25E6%2589%258B%25E5%258A%25A8%25E5%25AE%259E%25E7%258E%25B0%2F + '" target="_blank" title="Twitter">
+            <i class="iconfont icon-twitter"></i>
+          </a>
+        
+        
+          <a class="share-item" href="https://www.facebook.com/sharer.php?u=https://jhoniwu.github.io/2025/02/12/%E5%BB%B6%E8%BF%9F%E6%B6%88%E6%81%AF%E6%BA%90%E7%A0%81%E4%B8%8E%E6%89%8B%E5%8A%A8%E5%AE%9E%E7%8E%B0/" target="_blank" title="Facebook">
+            <i class="iconfont icon-facebooksquare"></i>
+          </a>
+        
+      </div>
+    </div>
+  
+  
+<script src="/js/shares.js"></script>
+
+
+
+      </div>
+    </div>
+  </body>
+</html>
