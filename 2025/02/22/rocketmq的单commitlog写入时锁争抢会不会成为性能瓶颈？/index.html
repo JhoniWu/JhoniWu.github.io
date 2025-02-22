@@ -15,7 +15,7 @@
   
   <title>
     
-      rocketmq的单commitlog写入时锁争抢会不会成为性能瓶颈？ 
+      🚀mq的单commitlog写入时锁争抢会不会成为性能瓶颈？ 
       
       
       |
@@ -161,16 +161,39 @@
   <!-- 文章内容页 url形式：https://yoursite/文章标题/ -->
   <div class="container post-details" id="post-details">
     <div class="post-content">
-      <div class="post-title">rocketmq的单commitlog写入时锁争抢会不会成为性能瓶颈？</div>
+      <div class="post-title">🚀mq的单commitlog写入时锁争抢会不会成为性能瓶颈？</div>
       <div class="post-attach">
         <span class="post-pubtime">
           <i class="iconfont icon-updatetime mr-10" title="更新时间"></i>
-          2025-02-22 18:25:44
+          2025-02-22 19:06:24
         </span>
         
+              <span class="post-categories">
+                <i class="iconfont icon-bookmark" title="分类"></i>
+                
+                <span class="span--category">
+                  <a href="/categories/%E4%BB%A3%E7%A0%81/" title="代码">
+                    <b>#</b> 代码
+                  </a>
+                </span>
+                
+              </span>
+          
+              <span class="post-tags">
+                <i class="iconfont icon-tags mr-10" title="标签"></i>
+                
+                <span class="span--tag mr-8">
+                  <a href="/tags/rocketmq/" title="rocketmq">
+                    #rocketmq
+                  </a>
+                </span>
+                
+              </span>
+          
       </div>
       <div class="markdown-body">
-        <h1 id="0-引言"><a href="#0-引言" class="headerlink" title="0.引言"></a>0.引言</h1><p>在回顾rocketmq的消息存储架构时突然想到一个问题，印象里commitlog的写入是需要加锁防止数据错乱的，而rocketmq将所有的topic存放在一个commitlog中，也就是说他的commitlog的写入并发会很小，这样没问题吗？于是我决定带着这个问题再次学习一下rocketmq的消息存储机制。<br>同时，我也在文章末尾提出一种新的设计commitlog的方案，与rocketmq官方实现方式比对，并且进行了理论分析。</p>
+        <p>💢 “你敢信？一行putMessageLock毁掉半个阿里云！评论区已炸锅，速来围观技术圈史诗级撕逼现场！”<br>⚠️ 警告：本文可能引起RocketMQ核心开发者不适，但程序员の逆袭，从转发开始！ 💪💻<br>👇 （文末附性能对比+代码实锤，看完别哭！）</p>
+<h1 id="0-引言"><a href="#0-引言" class="headerlink" title="0.引言"></a>0.引言</h1><p>在回顾rocketmq的消息存储架构时突然想到一个问题，印象里commitlog的写入是需要加锁防止数据错乱的，而rocketmq将所有的topic存放在一个commitlog中，也就是说他的commitlog的写入并发会很小，这样没问题吗？于是我决定带着这个问题再次学习一下rocketmq的消息存储机制。<br>同时，我也在文章末尾提出一种新的设计commitlog的方案，与rocketmq官方实现方式比对，并且进行了理论分析。</p>
 <h1 id="1-对话ds-r1"><a href="#1-对话ds-r1" class="headerlink" title="1.对话ds-r1"></a>1.对话ds-r1</h1><p>问：rocketmq这样的设计是否有问题？</p>
 <p>答：ds分别从锁粒度和锁优化，顺序写入，异步并行三个角度给我说明这样的设计没有问题。我总结了一下：</p>
 <ol>
@@ -343,9 +366,31 @@
           <div class="post-attach">
             <span class="post-pubtime">
               <i class="iconfont icon-updatetime mr-10" title="更新时间"></i>
-              2025-02-22 18:25:44
+              2025-02-22 19:06:24
             </span>
             
+                  <span class="post-categories">
+                    <i class="iconfont icon-bookmark" title="分类"></i>
+                    
+                    <span class="span--category">
+                      <a href="/categories/%E4%BB%A3%E7%A0%81/" title="代码">
+                        <b>#</b> 代码
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+                  <span class="post-tags">
+                    <i class="iconfont icon-tags mr-10" title="标签"></i>
+                    
+                    <span class="span--tag mr-8">
+                      <a href="/tags/rocketmq/" title="rocketmq">
+                        #rocketmq
+                      </a>
+                    </span>
+                    
+                  </span>
+              
           </div>
           <div class="post-foot-prev">
             
@@ -662,7 +707,7 @@
       </a>
       <div class="share-content hidden">
         
-          <a class="share-item" href="https://twitter.com/intent/tweet?text=' + rocketmq%E7%9A%84%E5%8D%95commitlog%E5%86%99%E5%85%A5%E6%97%B6%E9%94%81%E4%BA%89%E6%8A%A2%E4%BC%9A%E4%B8%8D%E4%BC%9A%E6%88%90%E4%B8%BA%E6%80%A7%E8%83%BD%E7%93%B6%E9%A2%88%EF%BC%9F + '&url=' + https%3A%2F%2Fjhoniwu.github.io%2F2025%2F02%2F22%2Frocketmq%25E7%259A%2584%25E5%258D%2595commitlog%25E5%2586%2599%25E5%2585%25A5%25E6%2597%25B6%25E9%2594%2581%25E4%25BA%2589%25E6%258A%25A2%25E4%25BC%259A%25E4%25B8%258D%25E4%25BC%259A%25E6%2588%2590%25E4%25B8%25BA%25E6%2580%25A7%25E8%2583%25BD%25E7%2593%25B6%25E9%25A2%2588%25EF%25BC%259F%2F + '" target="_blank" title="Twitter">
+          <a class="share-item" href="https://twitter.com/intent/tweet?text=' + %F0%9F%9A%80mq%E7%9A%84%E5%8D%95commitlog%E5%86%99%E5%85%A5%E6%97%B6%E9%94%81%E4%BA%89%E6%8A%A2%E4%BC%9A%E4%B8%8D%E4%BC%9A%E6%88%90%E4%B8%BA%E6%80%A7%E8%83%BD%E7%93%B6%E9%A2%88%EF%BC%9F + '&url=' + https%3A%2F%2Fjhoniwu.github.io%2F2025%2F02%2F22%2Frocketmq%25E7%259A%2584%25E5%258D%2595commitlog%25E5%2586%2599%25E5%2585%25A5%25E6%2597%25B6%25E9%2594%2581%25E4%25BA%2589%25E6%258A%25A2%25E4%25BC%259A%25E4%25B8%258D%25E4%25BC%259A%25E6%2588%2590%25E4%25B8%25BA%25E6%2580%25A7%25E8%2583%25BD%25E7%2593%25B6%25E9%25A2%2588%25EF%25BC%259F%2F + '" target="_blank" title="Twitter">
             <i class="iconfont icon-twitter"></i>
           </a>
         
