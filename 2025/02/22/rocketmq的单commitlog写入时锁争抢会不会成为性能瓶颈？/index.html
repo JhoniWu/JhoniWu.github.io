@@ -163,7 +163,7 @@
       <div class="post-attach">
         <span class="post-pubtime">
           <i class="iconfont icon-updatetime mr-10" title="更新时间"></i>
-          2025-02-22 19:06:24
+          2025-02-27 17:48:18
         </span>
         
               <span class="post-categories">
@@ -349,6 +349,24 @@
 <h1 id="和redis对比"><a href="#和redis对比" class="headerlink" title="和redis对比"></a>和redis对比</h1><p>思考这个场景的时候，让我想到了经常被问到的一个面试题：为什么redis采用单线程处理用户指令？</p>
 <p>既然commitlog的写入并发如此低，能不能用单线程去处理producer的发送操作呢？答案肯定是不能的，首先就是rocketmq本身有很多异步化操作，其持锁的时间非常短，那代表整个流程的开销还是很高的，而redis是纯内存操作，其数据结构简单，指令操作也很简单，整体流程肯定是比rocketmq存消息的开销要小很多。</p>
 <p>不过rocketmq的设计思想我觉得和redis还是有一点共通之处的，rocketmq在尽量简化并发模型，利用内存操作和顺序写提高性能。</p>
+<h1 id="abs锁"><a href="#abs锁" class="headerlink" title="abs锁"></a>abs锁</h1><p>rocketmq官方博客中有一篇对其的介绍，文章链接：<a target="_blank" rel="noopener" href="https://rocketmq.io/learning/explore/rocketmq_learning-gvr7dx_awbbpb_ergp3yyr06icvwtu/">https://rocketmq.io/learning/explore/rocketmq_learning-gvr7dx_awbbpb_ergp3yyr06icvwtu/</a></p>
+<p>abs锁，adaptive backoff spin lock，其核心思想是通过为轻量化自选锁提供一套退避策略，从而实现降低成本，有限制的锁自旋行为。适应不同强度资源的争抢情况。</p>
+<p>自旋锁在临界区小，资源争抢不激烈的场景下表现优异。但竞争激烈时锁自旋反而会大大拖垮cpu性能。互斥锁则是避免了cpu的空转，但在临界区小时的损耗又比自旋锁大许多。abs锁是在自旋锁spin lock的基础上，为其优化降低无效的资源损耗。</p>
+<h2 id="锁概念回顾"><a href="#锁概念回顾" class="headerlink" title="锁概念回顾"></a>锁概念回顾</h2><h3 id="临界区"><a href="#临界区" class="headerlink" title="临界区"></a>临界区</h3><p>临界区是一段只允许线程独占式访问的代码块。比如synchronized修饰的方法或代码块。本文想探讨的临界区就是在putMessageLock lock和unlock之间的代码块。</p>
+<h3 id="互斥锁"><a href="#互斥锁" class="headerlink" title="互斥锁"></a>互斥锁</h3><p>互斥锁是一种独占锁，线程A加锁成功后，在此代码块上的其他线程会加锁失败，继而释放cpu给别的线程。</p>
+<p>互斥锁加锁失败而阻塞是在os的内核态实现的，内核将线程置为睡眠状态。锁被释放后，内核又在合适的时机唤醒线程。这期间涉及到了两次线程上下文切换。</p>
+<h3 id="自旋锁"><a href="#自旋锁" class="headerlink" title="自旋锁"></a>自旋锁</h3><p>通过cpu提供的原子操作CAS在用户态完成lock&amp;unlock操作，不会发生内核态的切换。互斥锁加锁失败时线程会进入阻塞，而自旋锁的线程则通过忙等待的方式应对。</p>
+<p>因此，如果我们的临界区小，处理速度快，锁竞争不激烈，适合使用spinlock，反之，则该使用互斥lock节约cpu资源。也就是说消息size小，tps不高的情况下选自旋。</p>
+<p>在org&#x2F;apache&#x2F;rocketmq&#x2F;store&#x2F;CommitLog中有这样的代码，来进行spinlock与reentranlock的选择。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">this</span>.putMessageLock = messageStore.getMessageStoreConfig().isUseReentrantLockWhenPutMessage() ? <span class="keyword">new</span> <span class="title class_">PutMessageReentrantLock</span>() : <span class="keyword">new</span> <span class="title class_">PutMessageSpinLock</span>();</span><br></pre></td></tr></table></figure>
+
+<h2 id="k次退避锁"><a href="#k次退避锁" class="headerlink" title="k次退避锁"></a>k次退避锁</h2><p>自旋锁自身无法得知锁竞争的情况，但是我们可以根据自旋次数判断是否发生了激烈的锁竞争，因此基于自旋行为提出了k次退避锁，当进行k次自旋后仍然没获得锁，则调用Thread.yield将cpu执行权交给操作系统。这样可以在一定程度避免cpu的空转，也能在竞争不强的情况下减少上下文切换。</p>
+<p>rocketmq官方的blog中有相关实验数据，其结论是：在x86架构，同步刷盘情况下，k&#x3D;10^3时发送速度最快，cpu使用率也达到最低。</p>
+<h2 id="abs锁-1"><a href="#abs锁-1" class="headerlink" title="abs锁"></a>abs锁</h2><p>但是在已知锁竞争激烈的情况下，k次退避锁的自旋操作是无意义的，因为最终逃离不了上下文切换的成本，反而增加了k次自旋的损耗。</p>
+<p>abs锁通过对k进行动态调整实现优化。当k值达到与互斥锁相同级别损耗时，自旋锁就不适用于当前场景，此时要做自旋锁→互斥锁的转变。</p>
+<p>abs锁有多种锁的实现，在请求abs锁时，会去判断当前系统的参数决定获取锁的类型。运行时参数包括：竞争线程数&#x2F;tps&#x2F;消息大小&#x2F;临界区大小。</p>
+<p>对于每次争抢，记录当前k值当前自旋获取锁的成功率，如果成功率过低，则适当增大k，如果一直增大还是不管用，则转变锁的实现。官方测试给出k&#x3D;10^4时，自旋的代码就会大于cpu上下文切换一次的代价。</p>
+<p>同时，转变为互斥锁后也会继续监控锁的请求速率，如果速率达到80%，则退为自旋锁。</p>
 
       </div>
       
@@ -364,7 +382,7 @@
           <div class="post-attach">
             <span class="post-pubtime">
               <i class="iconfont icon-updatetime mr-10" title="更新时间"></i>
-              2025-02-22 19:06:24
+              2025-02-27 17:48:18
             </span>
             
                   <span class="post-categories">
@@ -409,7 +427,7 @@
     <div class="title">目录</div>
     <div class="catalog-content">
       
-        <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#0-%E5%BC%95%E8%A8%80"><span class="toc-text">0.引言</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#1-%E5%AF%B9%E8%AF%9Dds-r1"><span class="toc-text">1.对话ds-r1</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#2-rocketmq%E7%9A%84%E6%B6%88%E6%81%AF%E5%AD%98%E5%82%A8%E6%B5%81%E7%A8%8B"><span class="toc-text">2.rocketmq的消息存储流程</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#2-1-rocketmq%E5%AD%98%E5%82%A8%E7%BB%93%E6%9E%84%E8%AE%BE%E8%AE%A1"><span class="toc-text">2.1.rocketmq存储结构设计</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#2-2-%E6%B5%81%E7%A8%8B"><span class="toc-text">2.2.流程</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%95%B0%E6%8D%AE%E5%B0%81%E8%A3%85%E4%B8%8E%E6%A0%A1%E9%AA%8C"><span class="toc-text">数据封装与校验</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%B6%88%E6%81%AF%E5%86%99%E5%85%A5"><span class="toc-text">消息写入</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#2-3-%E5%88%86%E6%9E%90"><span class="toc-text">2.3.分析</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#3-%E5%A6%82%E6%9E%9C%E4%BD%BF%E7%94%A8%E5%88%86topic%E6%96%B9%E5%BC%8F%E5%AD%98%E5%82%A8%EF%BC%8C%E4%BC%9A%E6%80%8E%E4%B9%88%E6%A0%B7%EF%BC%9F"><span class="toc-text">3.如果使用分topic方式存储，会怎么样？</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#3-1%E6%96%B9%E6%A1%88"><span class="toc-text">3.1方案</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#3-2%E7%90%86%E8%AE%BA%E5%88%86%E6%9E%90"><span class="toc-text">3.2理论分析</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#%E5%92%8Credis%E5%AF%B9%E6%AF%94"><span class="toc-text">和redis对比</span></a></li></ol>
+        <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#0-%E5%BC%95%E8%A8%80"><span class="toc-text">0.引言</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#1-%E5%AF%B9%E8%AF%9Dds-r1"><span class="toc-text">1.对话ds-r1</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#2-rocketmq%E7%9A%84%E6%B6%88%E6%81%AF%E5%AD%98%E5%82%A8%E6%B5%81%E7%A8%8B"><span class="toc-text">2.rocketmq的消息存储流程</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#2-1-rocketmq%E5%AD%98%E5%82%A8%E7%BB%93%E6%9E%84%E8%AE%BE%E8%AE%A1"><span class="toc-text">2.1.rocketmq存储结构设计</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#2-2-%E6%B5%81%E7%A8%8B"><span class="toc-text">2.2.流程</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%95%B0%E6%8D%AE%E5%B0%81%E8%A3%85%E4%B8%8E%E6%A0%A1%E9%AA%8C"><span class="toc-text">数据封装与校验</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%B6%88%E6%81%AF%E5%86%99%E5%85%A5"><span class="toc-text">消息写入</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#2-3-%E5%88%86%E6%9E%90"><span class="toc-text">2.3.分析</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#3-%E5%A6%82%E6%9E%9C%E4%BD%BF%E7%94%A8%E5%88%86topic%E6%96%B9%E5%BC%8F%E5%AD%98%E5%82%A8%EF%BC%8C%E4%BC%9A%E6%80%8E%E4%B9%88%E6%A0%B7%EF%BC%9F"><span class="toc-text">3.如果使用分topic方式存储，会怎么样？</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#3-1%E6%96%B9%E6%A1%88"><span class="toc-text">3.1方案</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#3-2%E7%90%86%E8%AE%BA%E5%88%86%E6%9E%90"><span class="toc-text">3.2理论分析</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#%E5%92%8Credis%E5%AF%B9%E6%AF%94"><span class="toc-text">和redis对比</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#abs%E9%94%81"><span class="toc-text">abs锁</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E9%94%81%E6%A6%82%E5%BF%B5%E5%9B%9E%E9%A1%BE"><span class="toc-text">锁概念回顾</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E4%B8%B4%E7%95%8C%E5%8C%BA"><span class="toc-text">临界区</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E4%BA%92%E6%96%A5%E9%94%81"><span class="toc-text">互斥锁</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E8%87%AA%E6%97%8B%E9%94%81"><span class="toc-text">自旋锁</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#k%E6%AC%A1%E9%80%80%E9%81%BF%E9%94%81"><span class="toc-text">k次退避锁</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#abs%E9%94%81-1"><span class="toc-text">abs锁</span></a></li></ol></li></ol>
       
     </div>
   </div>
