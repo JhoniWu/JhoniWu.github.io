@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="zh-CN" color-mode="light">
+
+  <head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="author" content="pr4yer" />
+  <!-- Open Graph Description 简短摘要-->
+  
+  <!-- 用于搜索引擎的文章摘要 -->
+  
+  <meta name="description" content="车轮慢悠悠，人世本无常" />
+  
+  
+  
+  <title>
+    
+      synchronized&amp;ReentrantLock底层实现原理 
+      
+      
+      |
+    
+     pr4yer&#39;s Blog
+  </title>
+
+  
+    <link rel="apple-touch-icon" href="/images/favicon.png">
+    <link rel="icon" href="/images/favicon.png">
+  
+
+  <!-- Raleway-Font -->
+  <link href="https://fonts.googleapis.com/css?family=Raleway&display=swap" rel="stylesheet">
+
+  <!-- hexo site css -->
+  <link rel="stylesheet" href="/css/main.css" />
+  <link rel="stylesheet" href="//at.alicdn.com/t/font_1886449_67xjft27j1l.css" />
+  <!-- 代码块风格 -->
+  
+
+  <!-- jquery3.3.1 -->
+  
+    <script defer type="text/javascript" src="/plugins/jquery.min.js"></script>
+  
+
+  <!-- fancybox -->
+  
+    <link href="/plugins/jquery.fancybox.min.css" rel="stylesheet">
+    <script defer type="text/javascript" src="/plugins/jquery.fancybox.min.js"></script>
+  
+  
+<script src="/js/fancybox.js"></script>
+
+
+  
+
+  
+
+  <script>
+    var html = document.documentElement
+    const colorMode = localStorage.getItem('color-mode')
+    if (colorMode) {
+      document.documentElement.setAttribute('color-mode', colorMode)
+    }
+  </script>
+<meta name="generator" content="Hexo 6.3.0"></head>
+
+
+  <body>
+    <div id="app">
+      <div class="header">
+  <div class="avatar">
+    <a href="/">
+      <!-- 头像取消懒加载，添加no-lazy -->
+      
+        <img src="/images/avatar.png" alt="">
+      
+    </a>
+    <div class="nickname"><a href="/">pr4yer</a></div>
+  </div>
+  <div class="navbar">
+    <ul>
+      
+        <li class="nav-item" data-path="/">
+          <a href="/">Home</a>
+        </li>
+      
+        <li class="nav-item" data-path="/archives/">
+          <a href="/archives/">Archives</a>
+        </li>
+      
+        <li class="nav-item" data-path="/categories/">
+          <a href="/categories/">Categories</a>
+        </li>
+      
+        <li class="nav-item" data-path="/tags/">
+          <a href="/tags/">Tags</a>
+        </li>
+      
+        <li class="nav-item" data-path="/friends/">
+          <a href="/friends/">Friends</a>
+        </li>
+      
+        <li class="nav-item" data-path="/about/">
+          <a href="/about/">About</a>
+        </li>
+      
+    </ul>
+  </div>
+</div>
+
+
+<script src="/js/activeNav.js"></script>
+
+
+
+      <div class="flex-container">
+        <!-- 文章详情页，展示文章具体内容，url形式：https://yoursite/文章标题/ -->
+<!-- 同时为「标签tag」，「朋友friend」，「分类categories」，「关于about」页面的承载页面，具体展示取决于page.type -->
+
+
+  <!-- LaTex Display -->
+
+  
+    <script async type="text/javascript" src="/plugins/mathjax/tex-chtml.js"></script>
+  
+  <script>
+    MathJax = {
+      tex: {
+        inlineMath: [['$', '$'], ['\\(', '\\)']]
+      }
+    }
+  </script>
+
+
+
+
+
+  <!-- clipboard -->
+
+  
+    <script async type="text/javascript" src="/plugins/clipboard.min.js"></script>
+  
+  
+<script src="/js/codeCopy.js"></script>
+
+
+
+
+
+
+
+  
+
+  
+
+  
+
+  
+  <!-- 文章内容页 url形式：https://yoursite/文章标题/ -->
+  <div class="container post-details" id="post-details">
+    <div class="post-content">
+      <div class="post-title">synchronized&ReentrantLock底层实现原理</div>
+      <div class="post-attach">
+        <span class="post-pubtime">
+          <i class="iconfont icon-updatetime mr-10" title="更新时间"></i>
+          2025-03-01 13:53:31
+        </span>
+        
+      </div>
+      <div class="markdown-body">
+        <h1 id="问题"><a href="#问题" class="headerlink" title="问题"></a>问题</h1><ol>
+<li>synchronized原理&amp;锁升级过程</li>
+<li>reentrantlock实现原理&amp;aqs</li>
+</ol>
+<p>目前对这些问题的大致印象：</p>
+<p>synchronized是jvm层面实现的，通过在编译期给代码前后加上os的monitor机制实现并发控制。synchronized的效率较api层面实现的lock来说相对低下，所以后来引入了锁升级。api层面实现的lock大多基于aqs这个东西。</p>
+<p>参考文章：</p>
+<p><a target="_blank" rel="noopener" href="https://tech.youzan.com/javasuo-yu-xian-cheng-de-na-xie-shi/">https://tech.youzan.com/javasuo-yu-xian-cheng-de-na-xie-shi/</a></p>
+<p><a target="_blank" rel="noopener" href="https://blog.csdn.net/qicha3705/article/details/120459815">https://blog.csdn.net/qicha3705/article/details/120459815</a></p>
+<p><a target="_blank" rel="noopener" href="https://blog.csdn.net/wekajava/article/details/120306478">https://blog.csdn.net/wekajava/article/details/120306478</a></p>
+<h1 id="synchronized"><a href="#synchronized" class="headerlink" title="synchronized"></a>synchronized</h1><h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>观察sync反编译后的字节码可知，sync会在代码块上加一个monitor_enter和两个monitor_exit，第二个exit是为异常服务。monitorenter时，会将当前对象关联到一个monitor对象，设置monitor的owner为当前线程。</p>
+<p>monitorenter和monitorexit这两个都属于jvm指令，这两个指令主要基于java对象的mark word和object monitor来做的。</p>
+<p>markword是对象头的一部分，64bit长度，引用youzan技术的图</p>
+<p><img src="https://cdn.jsdelivr.net/gh/JhoniWu/picgo/202503011353809.png" alt="mark word"></p>
+<p>jdk1.6以前，sync就是直接去关联monitor对象。但是效率很低，后面引入了锁升级，涉及到偏向锁和轻量级锁两个优化锁，这两个锁就是基于mark word实现的。</p>
+<h2 id="偏向锁"><a href="#偏向锁" class="headerlink" title="偏向锁"></a>偏向锁</h2><p>偏向锁适用的场景是，加了sync的代码块但没有发生线程竞争的场景。jvm通过一次cas来尝试获取线程所有权，如果成功，则是偏向锁状态。多线程发生竞争时，需要主动撤去偏向锁。</p>
+<hr>
+<p>偏向锁的锁标识一定是101，但会根据mark word中thread id和epoch细分成多种小状态</p>
+<ol>
+<li>匿名偏向，threadid为0</li>
+<li>可重偏向，当前对象mark word中epoch与kclass的_proptotype_header的epoch不一样，可被cas thread id</li>
+<li>已偏向，thread id 非空，epoch有效</li>
+</ol>
+<p>jvm启动默认4s后会将所有对象的类的prototypeheader设置为匿名偏向样式。前四秒所有的对象会直接进入轻量级锁的状态。</p>
+<p>偏向锁加锁过程</p>
+<ol>
+<li>判断对象mark word的标识和对象所属klass的原型头的锁标识位是否为可偏向，若不是则走轻量级锁逻辑</li>
+<li>比较对象mark word的epoch和klass原型头的epoch是否匹配，验证偏向状态有没有过期</li>
+<li>比较thread id，0直接cas，非0先判断是否是重入锁，再结合epoch状态进行重偏向</li>
+</ol>
+<p>偏向锁被一个线程cas其锁对象mark word的thread id成功后，会向线程栈里添加一条displaced mark word为空的lock record，锁释放将栈中最近一条lock record的obj字段设置为null。注意，解锁并不会修改mark word的thread id。</p>
+<p>当其他线程尝试获取锁时，遍历偏向线程的lock record来判断是否还在执行同步代码块。</p>
+<p>如果当前锁已经偏向其他线程&#x2F;epoch值过期&#x2F;class偏向模式关闭&#x2F;获取偏向锁时发生并发冲突，会进行偏向锁的撤销。</p>
+<p>jvm需要通过safe point暂停原持有偏向锁的线程，safe point不一定是同步代码块之外，所以也延伸出两种情况。</p>
+<p>1.原线程仍在sync块内，升级为轻量级锁，在栈帧中创建lock record（也有提前生成的），将mark word复制到lock record的replace mark word中，再将mark word替换为一个指向lock record的指针。修改锁标记位00，继续执行。</p>
+<p>2.原线程退出sync块，将mark word设置为001无锁状态，其他线程走轻量级锁逻辑争抢线程。</p>
+<p>批量重偏向&#x2F;撤销</p>
+<p>一个类会有多个对象，当这些对象都作为锁对象被使用时：</p>
+<p>如果一个对象a，被当前线程执行完，又有另一个线程进入，此时对象a会进入锁撤销逻辑，撤销锁的开销是比较大的。</p>
+<p>解决方案就是，每个class维护一个偏向锁撤销计数器，当计数器到达阈值（默认20）时，jvm认为此锁的偏向逻辑有问题，进行批量重偏向。批量重偏向会将klass的prototypeheader的epoch字段++，这样下次再发生锁竞争时，线程会发现klass的epoch与当前的不一致，直接进行cas替换threadid即可，不需要去做锁撤销的逻辑。</p>
+<hr>
+<h2 id="轻量级锁"><a href="#轻量级锁" class="headerlink" title="轻量级锁"></a>轻量级锁</h2><p>偏向锁服务于，完全没有第二个线程执行sync代码块的场景。而轻量级锁服务于，虽然有多个线程执行sync代码块，但多线程之间天然串行，没有发生争抢的场景。</p>
+<p>轻量级锁的进入方式</p>
+<ol>
+<li>锁对象处于无锁状态001</li>
+<li>锁对象已经偏向某线程，且epoch没过期，这里与偏向锁撤销的未退出sync块关联</li>
+<li>锁对象已经处于轻量级锁状态</li>
+</ol>
+<p>加锁过程</p>
+<ol>
+<li>判断是否为无锁状态，是则进入2，否则进入3</li>
+<li>栈中创建lock record，将mark word拷贝到lock record的displace mark word重，将lock record的obj指向当前锁对象，尝试通过cas将锁对象的mark word指向lock record，成功则获取轻量级锁，修改锁标识，失败则进入3</li>
+<li>判断是否是重入锁，是则记录重入，栈帧中加一个displace mark word为null的lock record。</li>
+<li>不是则升级为重量级锁逻辑</li>
+</ol>
+<p>解锁过程</p>
+<ol>
+<li>判断是否是重入锁，看栈帧最上面的lock record的displace mark word值是否为null</li>
+<li>当到最后一个锁时，将lock record的displac mark word cas到锁对象的mark word，成功则解锁，失败则表示发生了锁膨胀，cas回去后，锁标识就变成最初的01无锁状态</li>
+<li>执行重量级锁解锁过程</li>
+</ol>
+<hr>
+<h2 id="重量级锁"><a href="#重量级锁" class="headerlink" title="重量级锁"></a>重量级锁</h2><p>重量级锁调用os的mutex lock，一般由轻量级锁膨胀而来，轻量级锁不需要考虑多线程竞争问题，只需要一个标识标识是否有线程占用锁对象，因此使用lock record这种线程私有的对象也能实现。</p>
+<p>而重量级锁是实实在在的并发控制，需要一个功能更强大的Object monitor对象，其不仅能存储锁对象的mark word，还能存储抢锁失败的阻塞线程队列_cxq，以及调用wait等待的线程队列_waitSet。</p>
+<p>重量级锁进入逻辑</p>
+<ol>
+<li>已经是重量级锁状态，返回</li>
+<li>膨胀中，continue重试，通过spin yield park完成自旋</li>
+<li>还是轻量级锁，执行膨胀逻辑</li>
+<li>无锁状态，执行膨胀逻辑</li>
+</ol>
+<p>膨胀过程</p>
+<ol>
+<li>调用omalloc方法分配一个obj monitor对象，并初始化其值。omalloc从线程私有的omFreeList中分配对象，如果list中没有monitor对象了，则从jvm全局的gFreeList分配一批monitor到omFreeList中</li>
+<li>将锁对象mark word设置为膨胀状态inflating，如果设置失败则表示其他线程正在执行锁膨胀，尝试忙等待</li>
+<li>设置monitor对象，重点是设置其owner指向lock record而不是线程</li>
+<li>设置锁对象mark word的锁标识，并将指向monitor的指针放入mark word</li>
+</ol>
+<p>锁膨胀inflate完后，不代表执行膨胀的线程就能获得这个锁，真正的锁竞争发生在其他方法</p>
+<p>monitor竞争过程</p>
+<ol>
+<li>如果当前是无锁，cas其owner为当前线程，成功则代表获取了锁</li>
+<li>如果owner是自己，则执行重入逻辑，monitor对象中的重入次数++</li>
+<li>如果owner是lock record，也就是上面锁膨胀完的状态，说明当前是之前轻量级锁持有者拥有，初始化，重入次数&#x3D;1，owner&#x3D;当前线程</li>
+<li>如果没有获取到锁，执行enterl函数</li>
+</ol>
+<p>enterl函数逻辑</p>
+<ol>
+<li>trylock一下，执行了一次cas操作置换owner</li>
+<li>tryspin一下，自旋n次cas操作，中间有pause，默认10次，源码里说20-100次效果最佳</li>
+<li>将当前线程包装成object waiter对象，尝试插入cxq队列，每次插入失败还会继续尝试获取锁，直到某一个操作成功。</li>
+<li>如果进入cxq队列后，继续尝试获取一次锁，如果失败则进入挂起逻辑，等待被唤醒</li>
+<li>唤醒动作触发后，尝试获取一次锁，成功则退出并从cxq队列移除，失败自旋然后继续挂起</li>
+</ol>
+<p>锁释放exit逻辑</p>
+<ol>
+<li>若轻量级锁在膨胀后释放了该锁，将其owner指向轻量级锁线程</li>
+<li>取出parkevent，将owner置为空，unpark等待的线程</li>
+</ol>
+<hr>
+<p>聊完了synchronized原理，再来看一下api层面的锁的实现原理，最需要关注的就是AbstractQueuedSynchronizer这个类，简称AQS，他是实现java并发包下reentrantlock，countdownlatch，futuretask等类的基础。</p>
+<p>参考文章：</p>
+<p><a target="_blank" rel="noopener" href="https://javadoop.com/post/AbstractQueuedSynchronizer">https://javadoop.com/post/AbstractQueuedSynchronizer</a></p>
+<hr>
+<h1 id="AQS"><a href="#AQS" class="headerlink" title="AQS"></a>AQS</h1><p>aqs的核心全局变量 </p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">private</span> <span class="keyword">transient</span> <span class="keyword">volatile</span> Node head;  <span class="comment">// 头节点</span></span><br><span class="line"><span class="keyword">private</span> <span class="keyword">transient</span> <span class="keyword">volatile</span> Node tail; <span class="comment">//尾节点</span></span><br><span class="line"><span class="keyword">private</span> <span class="keyword">volatile</span> <span class="type">int</span> state; <span class="comment">//锁状态标识，基于cas操作</span></span><br><span class="line"><span class="keyword">private</span> <span class="keyword">transient</span> Thread exclusiveOwnerThread; <span class="comment">//代表当前持有独占锁的线程</span></span><br></pre></td></tr></table></figure>
+
+<p>aqs模型：</p>
+<p>head ↔ node ↔ node ↔ node这样的模型</p>
+<p>head不属于阻塞队列，是当前持有锁的线程的包装。</p>
+<hr>
+<p>node模型：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 标识节点当前在共享模式下</span></span><br><span class="line"><span class="keyword">static</span> <span class="keyword">final</span> <span class="type">Node</span> <span class="variable">SHARED</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">Node</span>();</span><br><span class="line"><span class="comment">// 标识节点当前在独占模式下</span></span><br><span class="line"><span class="keyword">static</span> <span class="keyword">final</span> <span class="type">Node</span> <span class="variable">EXCLUSIVE</span> <span class="operator">=</span> <span class="literal">null</span>;</span><br><span class="line"></span><br><span class="line"><span class="comment">// node的几种状态 final</span></span><br><span class="line"><span class="type">int</span> <span class="variable">canceled</span> <span class="operator">=</span> <span class="number">1</span>;</span><br><span class="line"><span class="type">int</span> <span class="variable">singnal</span> <span class="operator">=</span> -<span class="number">1</span>;</span><br><span class="line"><span class="type">int</span> <span class="variable">condition</span> <span class="operator">=</span> -<span class="number">2</span>;</span><br><span class="line"><span class="type">int</span> <span class="variable">propagate</span> <span class="operator">=</span> -<span class="number">3</span>;</span><br><span class="line"></span><br><span class="line"><span class="comment">// node实际状态</span></span><br><span class="line"><span class="type">int</span> waitStatus; <span class="comment">// 上面的几种</span></span><br><span class="line">Node prev;</span><br><span class="line">Node next;</span><br><span class="line">Thread th; <span class="comment">// 这个node包装的thread</span></span><br></pre></td></tr></table></figure>
+
+<p>那么aqs的运作原理就很简单了，head是能够执行的thread节点，后面的都是阻塞的thread节点，每个节点自己都有标识，aqs维护一个state变量控制锁的流转。</p>
+<p>以reentrantlock为实际案例来看看aqs具体怎么实现锁的。</p>
+<hr>
+<h2 id="ReentrantLock"><a href="#ReentrantLock" class="headerlink" title="ReentrantLock"></a>ReentrantLock</h2><p>reentrantlock中使用抽象类Sync继承了aqs的能力，并有FairSync和UnFairSync两个具体实现。</p>
+<p>以FairSync举例说明</p>
+<hr>
+<h3 id="lock"><a href="#lock" class="headerlink" title="lock"></a>lock</h3><p>lock函数中调用acquire(1)方法</p>
+<p>acquire来自aqs，步骤如下</p>
+<ol>
+<li>tryAcquire (1)，尝试获取锁，注意这里是公平锁实现</li>
+<li>addWaiter(Node.exclusive)</li>
+<li>acquireQueued(node, arg)</li>
+<li>如果步骤一失败并且步骤三成功，挂起当前线程</li>
+</ol>
+<p>tryAcquire逻辑</p>
+<ol>
+<li>判断state，0代表当前无线程持有锁，进入2，如果有进入4</li>
+<li>判断queue中有无节点，注意这是公平锁实现，如果有节点则return false，否则继续</li>
+<li>cas尝试设置state状态为acquire的arg，即1，成功则设置exclusiveOwner的线程为自己</li>
+<li>衔接上面state不为0的情况，先判断下是否是自己的重入，也就是判断exclusiveOwnerthread和自己对比，如果是重入操作state++</li>
+<li>如果不是，tryacquire失败，return false</li>
+</ol>
+<p>addWaiter逻辑，将当前线程包装成node同时加入队列</p>
+<ol>
+<li>判断tail是否为空，不为空通过cas操作将自己设置为tail，入队成功则返回</li>
+<li>cas失败代表有其他节点在竞争入queue，执行enq(node)操作，return node</li>
+</ol>
+<p>enq逻辑，通过自旋手段入队，注意，enq入口可能是有多线程竞争入队，也有可能是等待队列为空</p>
+<p>enq是一个for;;循环</p>
+<ol>
+<li>队列为空，先处理，初始化head节点和tail节点，此时两者相同。进入下一次循环</li>
+<li>设置当前node为tail</li>
+</ol>
+<p>注意：enq仅仅将head初始化了，但并没有让enq的node成为head，所以这时的node虽然在阻塞队列，但他能够成为head抢占锁</p>
+<p>addWaiter得到的是一个已经加入queue的node节点，衔接上面的操作</p>
+<p>acquireQueue(addWaiter得到的node, arg)逻辑，这个逻辑也是一个for;;循环</p>
+<ol>
+<li>获得node的前置节点，尝试cas state，成功则return</li>
+<li>进入判断逻辑 是否Park线程AfterAcquireFail(prev, node)，如果需要park，继续进入 parkAndCheckInterrupt逻辑，最后设置interrupted &#x3D; true</li>
+<li>如果上面逻辑都执行失败，继续循环</li>
+<li>如果tryAcquire发生异常，进入finally块，执行cancelAcquire逻辑</li>
+</ol>
+<p>shouldParkAfterFailedAcquire逻辑，在addWaiter的2中执行，判断是否需要将当前线程挂起</p>
+<ol>
+<li>获取prev的waitStatus，若&#x3D;-1，将当前节点挂起，return</li>
+<li>若prev的waitStatus&gt;0，表示prev取消了排队，需要给自己换一个正常的(waitStatus&lt;0)的prev</li>
+<li>若prev的waitStatus&#x3D;0，-2，-3，cas其prev的waitStatus&#x3D;-1，注意，newNode塞入queue时，状态都为0，也就是说，当其后面有节点加入，就会被set为-1，同时其后节点会进入acquireQueue的下一次循环，然后park自己</li>
+</ol>
+<p>视角转回当前node，shouldParAfterFailedAcquire成功后，执行真正的park逻辑</p>
+<p>parkAndCheckInterrupt，调用LockSupport.park(this)，return Thread.interrupt();</p>
+<p>这就是lock的全流程，回顾一下，首先acquire 1，进入加锁逻辑，tryAcquire，如果失败，将自己包装成node，入阻塞队列，进入后尝试park自己的线程，但会先试一下能不能获取到锁，如果还是不行，则真正的调用LockSupport.park</p>
+<hr>
+<h3 id="unlock"><a href="#unlock" class="headerlink" title="unlock"></a>unlock</h3><p>调用sync的release 1, 进入tryRelease方法</p>
+<p>这里的1就是reentrantlock的特殊参数</p>
+<p>tryRelease中</p>
+<ol>
+<li>用state-arg也就是1得到当前状态</li>
+<li>如果不为0代表是重入锁，state - -后return</li>
+<li>如果为0，设置exclusiveThread为null，state&#x3D;0，return true</li>
+</ol>
+<p>tryRelease成功后，执行unparkSuccessor head逻辑</p>
+<ol>
+<li>将自己node的waitStatus设置为0</li>
+<li>从后往前找到最前面的waitStatus&lt;0的节点</li>
+<li>调用LockSupport.unpark唤醒</li>
+</ol>
+<p>被唤醒的线程从刚刚的parkAndCheckInterrupt继续执行。还记得他在一个for;;中吗？在下一次for循环中他会找到自己的prev节点，然后发现为0，将自己设为head，tryAcquire锁，成功return，执行同步代码块，unlock，唤醒自己的下一个线程，继续上述操作…</p>
+<p>此时一个完整的 最基本的reentrantlock流程就出来了。</p>
+
+      </div>
+      
+        <div class="prev-or-next">
+          <div class="post-foot-next">
+            
+              <a href="/2025/02/23/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0%E3%80%9020250223%E3%80%91/" target="_self">
+                <i class="iconfont icon-chevronleft"></i>
+                <span>上一页</span>
+              </a>
+            
+          </div>
+          <div class="post-attach">
+            <span class="post-pubtime">
+              <i class="iconfont icon-updatetime mr-10" title="更新时间"></i>
+              2025-03-01 13:53:31
+            </span>
+            
+          </div>
+          <div class="post-foot-prev">
+            
+          </div>
+        </div>
+      
+    </div>
+    
+  <div id="btn-catalog" class="btn-catalog">
+    <i class="iconfont icon-catalog"></i>
+  </div>
+  <div class="post-catalog hidden" id="catalog">
+    <div class="title">目录</div>
+    <div class="catalog-content">
+      
+        <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#%E9%97%AE%E9%A2%98"><span class="toc-text">问题</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#synchronized"><span class="toc-text">synchronized</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%89%8D%E8%A8%80"><span class="toc-text">前言</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%81%8F%E5%90%91%E9%94%81"><span class="toc-text">偏向锁</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E8%BD%BB%E9%87%8F%E7%BA%A7%E9%94%81"><span class="toc-text">轻量级锁</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E9%87%8D%E9%87%8F%E7%BA%A7%E9%94%81"><span class="toc-text">重量级锁</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#AQS"><span class="toc-text">AQS</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#ReentrantLock"><span class="toc-text">ReentrantLock</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#lock"><span class="toc-text">lock</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#unlock"><span class="toc-text">unlock</span></a></li></ol></li></ol></li></ol>
+      
+    </div>
+  </div>
+
+  
+<script src="/js/catalog.js"></script>
+
+
+
+
+    
+  </div>
+
+
+        
+<div class="footer">
+  <div class="social">
+    <ul>
+      
+        <li>
+          
+              <a title="github" target="_blank" rel="noopener" href="https://github.com/JhoniWu">
+                <i class="iconfont icon-github"></i>
+              </a>
+              
+        </li>
+        
+    </ul>
+  </div>
+  
+    
+    <div class="footer-more">
+      
+        <a target="_blank" rel="noopener" href="https://github.com/zchengsite/hexo-theme-oranges">Theme by Oranges | Powered by Hexo</a>
+        
+    </div>
+  
+    
+    <div class="footer-more">
+      
+        <a target="_blank" rel="noopener" href="https://github.com/zchengsite/hexo-theme-oranges">Theme by Oranges | Powered by Hexo</a>
+        
+    </div>
+  
+  
+</div>
+
+      </div>
+
+      <div class="tools-bar">
+        <div class="back-to-top tools-bar-item hidden">
+  <a href="javascript: void(0)">
+    <i class="iconfont icon-chevronup"></i>
+  </a>
+</div>
+
+
+<script src="/js/backtotop.js"></script>
+
+
+
+        
+  <div class="search-icon tools-bar-item" id="search-icon">
+    <a href="javascript: void(0)">
+      <i class="iconfont icon-search"></i>
+    </a>
+  </div>
+
+  <div class="search-overlay hidden">
+    <div class="search-content" tabindex="0">
+      <div class="search-title">
+        <span class="search-icon-input">
+          <a href="javascript: void(0)">
+            <i class="iconfont icon-search"></i>
+          </a>
+        </span>
+        
+          <input type="text" class="search-input" id="search-input" placeholder="搜索...">
+        
+        <span class="search-close-icon" id="search-close-icon">
+          <a href="javascript: void(0)">
+            <i class="iconfont icon-close"></i>
+          </a>
+        </span>
+      </div>
+      <div class="search-result" id="search-result"></div>
+    </div>
+  </div>
+
+  <script type="text/javascript">
+    var inputArea = document.querySelector("#search-input")
+    var searchOverlayArea = document.querySelector(".search-overlay")
+
+    inputArea.onclick = function() {
+      getSearchFile()
+      this.onclick = null
+    }
+
+    inputArea.onkeydown = function() {
+      if(event.keyCode == 13)
+        return false
+    }
+
+    function openOrHideSearchContent() {
+      let isHidden = searchOverlayArea.classList.contains('hidden')
+      if (isHidden) {
+        searchOverlayArea.classList.remove('hidden')
+        document.body.classList.add('hidden')
+        // inputArea.focus()
+      } else {
+        searchOverlayArea.classList.add('hidden')
+        document.body.classList.remove('hidden')
+      }
+    }
+
+    function blurSearchContent(e) {
+      if (e.target === searchOverlayArea) {
+        openOrHideSearchContent()
+      }
+    }
+
+    document.querySelector("#search-icon").addEventListener("click", openOrHideSearchContent, false)
+    document.querySelector("#search-close-icon").addEventListener("click", openOrHideSearchContent, false)
+    searchOverlayArea.addEventListener("click", blurSearchContent, false)
+
+    var searchFunc = function (path, search_id, content_id) {
+      'use strict';
+      var $input = document.getElementById(search_id);
+      var $resultContent = document.getElementById(content_id);
+      $resultContent.innerHTML = "<ul><span class='local-search-empty'>首次搜索，正在载入索引文件，请稍后……<span></ul>";
+      $.ajax({
+        // 0x01. load xml file
+        url: path,
+        dataType: "xml",
+        success: function (xmlResponse) {
+          // 0x02. parse xml file
+          var datas = $("entry", xmlResponse).map(function () {
+            return {
+              title: $("title", this).text(),
+              content: $("content", this).text(),
+              url: $("url", this).text()
+            };
+          }).get();
+          $resultContent.innerHTML = "";
+
+          $input.addEventListener('input', function () {
+            // 0x03. parse query to keywords list
+            var str = '<ul class=\"search-result-list\">';
+            var keywords = this.value.trim().toLowerCase().split(/[\s\-]+/);
+            $resultContent.innerHTML = "";
+            if (this.value.trim().length <= 0) {
+              return;
+            }
+            // 0x04. perform local searching
+            datas.forEach(function (data) {
+              var isMatch = true;
+              var content_index = [];
+              if (!data.title || data.title.trim() === '') {
+                data.title = "Untitled";
+              }
+              var orig_data_title = data.title.trim();
+              var data_title = orig_data_title.toLowerCase();
+              var orig_data_content = data.content.trim().replace(/<[^>]+>/g, "");
+              var data_content = orig_data_content.toLowerCase();
+              var data_url = data.url;
+              var index_title = -1;
+              var index_content = -1;
+              var first_occur = -1;
+              // only match artiles with not empty contents
+              if (data_content !== '') {
+                keywords.forEach(function (keyword, i) {
+                  index_title = data_title.indexOf(keyword);
+                  index_content = data_content.indexOf(keyword);
+
+                  if (index_title < 0 && index_content < 0) {
+                    isMatch = false;
+                  } else {
+                    if (index_content < 0) {
+                      index_content = 0;
+                    }
+                    if (i == 0) {
+                      first_occur = index_content;
+                    }
+                    // content_index.push({index_content:index_content, keyword_len:keyword_len});
+                  }
+                });
+              } else {
+                isMatch = false;
+              }
+              // 0x05. show search results
+              if (isMatch) {
+                str += "<li><a href='" + data_url + "' class='search-result-title'>" + orig_data_title + "</a>";
+                var content = orig_data_content;
+                if (first_occur >= 0) {
+                  // cut out 100 characters
+                  var start = first_occur - 20;
+                  var end = first_occur + 80;
+
+                  if (start < 0) {
+                    start = 0;
+                  }
+
+                  if (start == 0) {
+                    end = 100;
+                  }
+
+                  if (end > content.length) {
+                    end = content.length;
+                  }
+
+                  var match_content = content.substr(start, end);
+
+                  // highlight all keywords
+                  keywords.forEach(function (keyword) {
+                    var regS = new RegExp(keyword, "gi");
+                    match_content = match_content.replace(regS, "<span class=\"search-keyword\">" + keyword + "</span>");
+                  });
+
+                  str += "<p class=\"search-result-abstract\">" + match_content + "...</p>"
+                }
+                str += "</li>";
+              }
+            });
+            str += "</ul>";
+            if (str.indexOf('<li>') === -1) {
+              return $resultContent.innerHTML = "<ul><span class='local-search-empty'>没有找到内容，请尝试更换检索词。<span></ul>";
+            }
+            $resultContent.innerHTML = str;
+          });
+        },
+        error: function(xhr, status, error) {
+          $resultContent.innerHTML = ""
+          if (xhr.status === 404) {
+            $resultContent.innerHTML = "<ul><span class='local-search-empty'>未找到search.xml文件，具体请参考：<a href='https://github.com/zchengsite/hexo-theme-oranges#configuration' target='_black'>configuration</a><span></ul>";
+          } else {
+            $resultContent.innerHTML = "<ul><span class='local-search-empty'>请求失败，尝试重新刷新页面或稍后重试。<span></ul>";
+          }
+        }
+      });
+      $(document).on('click', '#search-close-icon', function() {
+        $('#search-input').val('');
+        $('#search-result').html('');
+      });
+    }
+
+    var getSearchFile = function() {
+        var path = "/search.xml";
+        searchFunc(path, 'search-input', 'search-result');
+    }
+  </script>
+
+
+
+
+        
+  <div class="tools-bar-item theme-icon" id="switch-color-scheme">
+    <a href="javascript: void(0)">
+      <i id="theme-icon" class="iconfont icon-moon"></i>
+    </a>
+  </div>
+
+  
+<script src="/js/colorscheme.js"></script>
+
+
+
+
+
+        
+  
+    <div class="share-icon tools-bar-item">
+      <a href="javascript: void(0)" id="share-icon">
+        <i class="iconfont iconshare"></i>
+      </a>
+      <div class="share-content hidden">
+        
+          <a class="share-item" href="https://twitter.com/intent/tweet?text=' + synchronized%26ReentrantLock%E5%BA%95%E5%B1%82%E5%AE%9E%E7%8E%B0%E5%8E%9F%E7%90%86 + '&url=' + https%3A%2F%2Fjhoniwu.github.io%2F2025%2F03%2F01%2Fsynchronized-ReentrantLock%25E5%25BA%2595%25E5%25B1%2582%25E5%25AE%259E%25E7%258E%25B0%25E5%258E%259F%25E7%2590%2586%2F + '" target="_blank" title="Twitter">
+            <i class="iconfont icon-twitter"></i>
+          </a>
+        
+        
+          <a class="share-item" href="https://www.facebook.com/sharer.php?u=https://jhoniwu.github.io/2025/03/01/synchronized-ReentrantLock%E5%BA%95%E5%B1%82%E5%AE%9E%E7%8E%B0%E5%8E%9F%E7%90%86/" target="_blank" title="Facebook">
+            <i class="iconfont icon-facebooksquare"></i>
+          </a>
+        
+      </div>
+    </div>
+  
+  
+<script src="/js/shares.js"></script>
+
+
+
+      </div>
+    </div>
+  </body>
+</html>
