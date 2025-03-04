@@ -15,7 +15,7 @@
   
   <title>
     
-      archive_a: 2025/2 
+      有赞透明多级缓存TMC-学习笔记 
       
       
       |
@@ -114,120 +114,154 @@
 
 
       <div class="flex-container">
-        <!-- 归档页，展示本站所有文章，按照年份降序归类，url形式：https://yoursite/archives/ -->
+        <!-- 文章详情页，展示文章具体内容，url形式：https://yoursite/文章标题/ -->
+<!-- 同时为「标签tag」，「朋友friend」，「分类categories」，「关于about」页面的承载页面，具体展示取决于page.type -->
 
-<!-- last: 按年份把文章分组，当前遍历到的年份 -->
-<!-- now: 当前遍历到的文章的发布年份 -->
 
-<div class="container archives">
-  <div class="post-list">
-    
-        <!-- 后续文章的发布年份呈现 -->
-        <div class="content-title">
-          <h2>
-            <span>2025</span>
-          </h2>
+  <!-- LaTex Display -->
+
+  
+    <script async type="text/javascript" src="/plugins/mathjax/tex-chtml.js"></script>
+  
+  <script>
+    MathJax = {
+      tex: {
+        inlineMath: [['$', '$'], ['\\(', '\\)']]
+      }
+    }
+  </script>
+
+
+
+
+
+  <!-- clipboard -->
+
+  
+    <script async type="text/javascript" src="/plugins/clipboard.min.js"></script>
+  
+  
+<script src="/js/codeCopy.js"></script>
+
+
+
+
+
+
+
+  
+
+  
+
+  
+
+  
+  <!-- 文章内容页 url形式：https://yoursite/文章标题/ -->
+  <div class="container post-details" id="post-details">
+    <div class="post-content">
+      <div class="post-title">有赞透明多级缓存TMC-学习笔记</div>
+      <div class="post-attach">
+        <span class="post-pubtime">
+          <i class="iconfont icon-updatetime mr-10" title="更新时间"></i>
+          2025-03-04 19:09:11
+        </span>
+        
+      </div>
+      <div class="markdown-body">
+        <p>最近在学多级缓存，基本概念了解完之后，想看看实际生产环境中的应用，正好看到有赞的tmc技术方案，于是来学习一下。</p>
+<p>原文链接：<a target="_blank" rel="noopener" href="https://tech.youzan.com/tmc/">https://tech.youzan.com/tmc/</a></p>
+<p>tmc提供的包括</p>
+<ol>
+<li>基本的分布式缓存能力</li>
+<li>应用层的热点探测</li>
+<li>应用层的本地缓存设计</li>
+<li>缓存命中统计</li>
+</ol>
+<p>tmc主要是为了解决以下场景出现的问题</p>
+<ol>
+<li>缓存热点访问不可提前预知的场景，比如活动</li>
+<li>少数热点key占用大量缓存访问请求导致缓存不可用（分布式缓存）</li>
+</ol>
+<p>想要应对上述情况，我们的思路肯定是用多级缓存方案，但是多级缓存的设计中需要考虑很多问题，有赞提出了一些常见的需求痛点</p>
+<ol>
+<li>热点探测，如何探测不可预知的热点key？</li>
+<li>数据一致性，如何保证多级缓存之间的一致性</li>
+<li>效果验证，事后如何统计缓存命中率并进行优化？</li>
+<li>透明接入，整体解决方案怎么做对原系统侵入小，能够快速平滑接入各系统</li>
+</ol>
+<p>tmc基本架构</p>
+<ol>
+<li>存储层，底层的kv存储库，redis之类的</li>
+<li>代理层，为应用层提供统一的缓存入口，承担分布式缓存的key路由转发功能</li>
+<li>应用层，提供sdk给其他服务使用，内置热点探测&#x2F;本地缓存功能</li>
+</ol>
+<p>tmc如何做到透明接入？</p>
+<p>对于java应用一般使用spring包下的redistemplate或者自己定义的jedis，不过其本质都是通过jedispool创建的jedis对象去操作缓存服务器。</p>
+<p>tmc对jedis的jedispool和jedis对象进行改造，在jedispool初始化过程中集成tmc的热点发现+本地缓存系统的初始化。同时，在使用jedis时假如与缓存系统hermes的交互，实现热点探测和本地缓存的接入。这样只需要替换一套maven包加一些配置就能实现redis→tmc的替换。</p>
+<p>tmc处理整体架构</p>
+<p><img src="https://cdn.jsdelivr.net/gh/JhoniWu/picgo/202503041436116.png" alt="image"></p>
+<p>tmc处理基本流程</p>
+<p>get</p>
+<ol>
+<li>判断是否是hotkey，是则走本地缓存，不是则走远端缓存</li>
+<li>记录事件，异步上报给tmc服务端，用于hotkey的更新迭代</li>
+</ol>
+<p>set&#x2F;del&#x2F;expire</p>
+<ol>
+<li>操作远端缓存，同时调用tmc客户端的invalid方法让本地缓存失效</li>
+<li>通过异步事件上报key失效消息，同步其他tmc客户端对缓存进行invalid保证一致性</li>
+</ol>
+<p>hotkey探测</p>
+<ol>
+<li>服务端收集上报的事件，进行周期计算，探测应用集群中的hotkey列表</li>
+<li>通过分布式存储中心将hotkey列表推送给各客户端，通知其对hotkey进行本地缓存</li>
+</ol>
+<hr>
+<p>tmc的稳定性保障</p>
+<ol>
+<li>数据上报异步化，接收一定的时延，不阻塞业务</li>
+<li>通信模块线程隔离，使用线程池隔离技术避免影响基本业务功能</li>
+<li>本地缓存管控，使用lru等算法，避免jvm内存溢出（64mb）</li>
+</ol>
+<p>tmc的一致性保障</p>
+<ol>
+<li>缓存对象少，仅少部分热点数据</li>
+<li>通过invalid本地缓存保证单节点的强一致性</li>
+<li>通过广播事件保证多节点的最终一致性</li>
+</ol>
+<hr>
+<p>hotkey探测方法</p>
+<p>tmc是通过统计事件，对每个key维护一个时间轮，以热度形式汇总后进行排序，选出topn推送给客户端的方式。</p>
+
+      </div>
+      
+        <div class="prev-or-next">
+          <div class="post-foot-next">
+            
+              <a href="/2025/03/01/synchronized-ReentrantLock%E5%BA%95%E5%B1%82%E5%AE%9E%E7%8E%B0%E5%8E%9F%E7%90%86/" target="_self">
+                <i class="iconfont icon-chevronleft"></i>
+                <span>上一页</span>
+              </a>
+            
+          </div>
+          <div class="post-attach">
+            <span class="post-pubtime">
+              <i class="iconfont icon-updatetime mr-10" title="更新时间"></i>
+              2025-03-04 19:09:11
+            </span>
+            
+          </div>
+          <div class="post-foot-prev">
+            
+          </div>
         </div>
       
-      <div class="post-item" title="有赞透明多级缓存TMC-学习笔记">
-        <div class="time-m-d">03-04</div>
-        <div class="title">
-          <a href="/2025/03/04/%E6%9C%89%E8%B5%9E%E9%80%8F%E6%98%8E%E5%A4%9A%E7%BA%A7%E7%BC%93%E5%AD%98TMC-%E5%AD%A6%E4%B9%A0%E7%AC%94%E8%AE%B0/">
-            <span>有赞透明多级缓存TMC-学习笔记</span>
-          </a>
-        </div>
-      </div>
+    </div>
     
-      <div class="post-item" title="synchronized&ReentrantLock底层实现原理">
-        <div class="time-m-d">03-01</div>
-        <div class="title">
-          <a href="/2025/03/01/synchronized-ReentrantLock%E5%BA%95%E5%B1%82%E5%AE%9E%E7%8E%B0%E5%8E%9F%E7%90%86/">
-            <span>synchronized&ReentrantLock底层实现原理</span>
-          </a>
-        </div>
-      </div>
-    
-      <div class="post-item" title="读书笔记【20250223】">
-        <div class="time-m-d">02-23</div>
-        <div class="title">
-          <a href="/2025/02/23/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0%E3%80%9020250223%E3%80%91/">
-            <span>读书笔记【20250223】</span>
-          </a>
-        </div>
-      </div>
-    
-      <div class="post-item" title="🚀mq的单commitlog写入时锁争抢会不会成为性能瓶颈？">
-        <div class="time-m-d">02-22</div>
-        <div class="title">
-          <a href="/2025/02/22/rocketmq%E7%9A%84%E5%8D%95commitlog%E5%86%99%E5%85%A5%E6%97%B6%E9%94%81%E4%BA%89%E6%8A%A2%E4%BC%9A%E4%B8%8D%E4%BC%9A%E6%88%90%E4%B8%BA%E6%80%A7%E8%83%BD%E7%93%B6%E9%A2%88%EF%BC%9F/">
-            <span>🚀mq的单commitlog写入时锁争抢会不会成为性能瓶颈？</span>
-          </a>
-        </div>
-      </div>
-    
-      <div class="post-item" title="🚀mq延迟消息源码与手动实现">
-        <div class="time-m-d">02-12</div>
-        <div class="title">
-          <a href="/2025/02/12/%E5%BB%B6%E8%BF%9F%E6%B6%88%E6%81%AF%E6%BA%90%E7%A0%81%E4%B8%8E%E6%89%8B%E5%8A%A8%E5%AE%9E%E7%8E%B0/">
-            <span>🚀mq延迟消息源码与手动实现</span>
-          </a>
-        </div>
-      </div>
-    
-      <div class="post-item" title="Leetcode-32-比较有意思的解法">
-        <div class="time-m-d">02-11</div>
-        <div class="title">
-          <a href="/2025/02/11/Leetcode-32-%E6%AF%94%E8%BE%83%E6%9C%89%E6%84%8F%E6%80%9D%E7%9A%84%E8%A7%A3%E6%B3%95/">
-            <span>Leetcode-32-比较有意思的解法</span>
-          </a>
-        </div>
-      </div>
-    
-      <div class="post-item" title="🚀rocketmq源码分析与实现">
-        <div class="time-m-d">02-11</div>
-        <div class="title">
-          <a href="/2025/02/11/%F0%9F%9A%80rocketmq%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E4%B8%8E%E5%AE%9E%E7%8E%B0/">
-            <span>🚀rocketmq源码分析与实现</span>
-          </a>
-        </div>
-      </div>
-    
-        <!-- 后续文章的发布年份呈现 -->
-        <div class="content-title">
-          <h2>
-            <span>2024</span>
-          </h2>
-        </div>
-      
-      <div class="post-item" title="博客搬迁">
-        <div class="time-m-d">12-30</div>
-        <div class="title">
-          <a href="/2024/12/30/%E8%BF%81%E7%A7%BB/">
-            <span>博客搬迁</span>
-          </a>
-        </div>
-      </div>
-    
-      <div class="post-item" title="spring ioc源码实现分析（2）">
-        <div class="time-m-d">11-16</div>
-        <div class="title">
-          <a href="/2024/11/16/spring-ioc%E6%BA%90%E7%A0%81%E5%AE%9E%E7%8E%B0%E5%88%86%E6%9E%90%EF%BC%882%EF%BC%89/">
-            <span>spring ioc源码实现分析（2）</span>
-          </a>
-        </div>
-      </div>
-    
-      <div class="post-item" title="spring ioc源码实现分析">
-        <div class="time-m-d">11-13</div>
-        <div class="title">
-          <a href="/2024/11/13/spring-ioc%E6%BA%90%E7%A0%81%E5%AE%9E%E7%8E%B0%E5%88%86%E6%9E%90/">
-            <span>spring ioc源码实现分析</span>
-          </a>
-        </div>
-      </div>
+
     
   </div>
-</div>
+
 
         
 <div class="footer">
@@ -484,6 +518,24 @@
 
 
         
+  
+    <div class="share-icon tools-bar-item">
+      <a href="javascript: void(0)" id="share-icon">
+        <i class="iconfont iconshare"></i>
+      </a>
+      <div class="share-content hidden">
+        
+          <a class="share-item" href="https://twitter.com/intent/tweet?text=' + %E6%9C%89%E8%B5%9E%E9%80%8F%E6%98%8E%E5%A4%9A%E7%BA%A7%E7%BC%93%E5%AD%98TMC-%E5%AD%A6%E4%B9%A0%E7%AC%94%E8%AE%B0 + '&url=' + https%3A%2F%2Fjhoniwu.github.io%2F2025%2F03%2F04%2F%25E6%259C%2589%25E8%25B5%259E%25E9%2580%258F%25E6%2598%258E%25E5%25A4%259A%25E7%25BA%25A7%25E7%25BC%2593%25E5%25AD%2598TMC-%25E5%25AD%25A6%25E4%25B9%25A0%25E7%25AC%2594%25E8%25AE%25B0%2F + '" target="_blank" title="Twitter">
+            <i class="iconfont icon-twitter"></i>
+          </a>
+        
+        
+          <a class="share-item" href="https://www.facebook.com/sharer.php?u=https://jhoniwu.github.io/2025/03/04/%E6%9C%89%E8%B5%9E%E9%80%8F%E6%98%8E%E5%A4%9A%E7%BA%A7%E7%BC%93%E5%AD%98TMC-%E5%AD%A6%E4%B9%A0%E7%AC%94%E8%AE%B0/" target="_blank" title="Facebook">
+            <i class="iconfont icon-facebooksquare"></i>
+          </a>
+        
+      </div>
+    </div>
   
   
 <script src="/js/shares.js"></script>
